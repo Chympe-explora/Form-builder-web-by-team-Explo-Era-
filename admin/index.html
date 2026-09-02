@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Form Builder — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{ --primary:#4B39D6; --bg:#F5F6FA; --text:#1F1F1F; --gray:#5F6368; --border:#DADCE0; --red:#D93025; --green:#188038; }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Roboto',Arial,sans-serif;min-height:100vh;}
+  .hidden{display:none !important;}
+  a{color:var(--primary);}
+
+  /* ---- shell ---- */
+  .topbar{background:#fff;border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;justify-content:space-between;}
+  .topbar .brand{font-weight:700;font-size:16px;}
+  .topbar button{background:none;border:1px solid var(--border);border-radius:4px;padding:6px 12px;cursor:pointer;font-size:13px;}
+  .container{max-width:960px;margin:0 auto;padding:20px 16px 80px;}
+
+  /* ---- auth ---- */
+  .auth-card{max-width:360px;margin:60px auto;background:#fff;border-radius:8px;padding:28px;box-shadow:0 1px 3px rgba(0,0,0,.1);}
+  .auth-card h1{font-size:20px;margin:0 0 16px;}
+  .field-row{margin-bottom:14px;}
+  .field-row label{display:block;font-size:13px;color:var(--gray);margin-bottom:4px;}
+  .field-row input,.field-row select,.field-row textarea{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:4px;font-size:14px;font-family:inherit;}
+  .btn{background:var(--primary);color:#fff;border:none;border-radius:4px;padding:9px 18px;font-size:14px;font-weight:500;cursor:pointer;}
+  .btn:hover{filter:brightness(0.93);}
+  .btn.outline{background:#fff;color:var(--primary);border:1px solid var(--primary);}
+  .btn.danger{background:var(--red);}
+  .btn.small{padding:5px 10px;font-size:12px;}
+  .link-btn{background:none;border:none;color:var(--primary);cursor:pointer;font-size:13px;padding:0;}
+  .error-msg{color:var(--red);font-size:13px;margin-top:8px;}
+  .muted{color:var(--gray);font-size:13px;}
+
+  /* ---- dashboard ---- */
+  .dash-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+  .proj-card{background:#fff;border-radius:8px;padding:16px 18px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 1px 2px rgba(0,0,0,.08);}
+  .proj-card .name{font-weight:500;}
+  .proj-card .meta{font-size:12px;color:var(--gray);margin-top:2px;}
+  .pill{font-size:11px;padding:2px 8px;border-radius:10px;background:#E8EAED;color:var(--gray);}
+  .pill.live{background:#E6F4EA;color:var(--green);}
+  .proj-actions{display:flex;gap:6px;}
+
+  /* ---- editor ---- */
+  .editor-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap;}
+  .editor-tabs button{background:none;border:none;padding:10px 14px;font-size:14px;cursor:pointer;color:var(--gray);border-bottom:2px solid transparent;}
+  .editor-tabs button.active{color:var(--primary);border-bottom-color:var(--primary);font-weight:500;}
+  .page-tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;align-items:center;}
+  .page-tabs .ptab{padding:6px 12px;border-radius:14px;background:#fff;border:1px solid var(--border);font-size:13px;cursor:pointer;}
+  .page-tabs .ptab.active{background:var(--primary);color:#fff;border-color:var(--primary);}
+  .el-card{background:#fff;border-radius:8px;padding:14px 16px;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.08);cursor:grab;transition:box-shadow .15s,opacity .15s;}
+  .el-card.dragging{opacity:.4;}
+  .el-card.drag-over{box-shadow:0 0 0 2px var(--primary);}
+  .el-card .el-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;}
+  .drag-handle{color:var(--gray);cursor:grab;font-size:14px;letter-spacing:-3px;user-select:none;}
+  .el-type{font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--gray);background:#F1F3F4;padding:2px 8px;border-radius:4px;}
+  .el-actions{display:flex;gap:4px;}
+  .el-actions button{background:none;border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:12px;cursor:pointer;}
+  .add-el-row{display:flex;gap:8px;margin:14px 0 24px;}
+  .settings-block{background:#fff;border-radius:8px;padding:18px;margin-bottom:14px;}
+  .settings-block h3{margin:0 0 12px;font-size:15px;}
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid #F1F3F4;}
+  .toggle-row:first-child{border-top:none;}
+  .opts-editor textarea{min-height:70px;}
+  .media-grid{display:flex;flex-wrap:wrap;gap:10px;}
+  .media-item{width:100px;text-align:center;font-size:11px;}
+  .media-item img{width:100px;height:70px;object-fit:cover;border-radius:4px;border:1px solid var(--border);}
+  table.resp-table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;}
+  table.resp-table th,table.resp-table td{padding:10px 12px;font-size:13px;text-align:left;border-bottom:1px solid #F1F3F4;}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:50;}
+  .modal-box{background:#fff;border-radius:8px;max-width:480px;width:90%;max-height:85vh;overflow:auto;padding:20px;}
+  .preview-frame{background:#EEEDFB;border-radius:8px;padding:20px;max-width:480px;margin:0 auto;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">Form &amp; Website Builder</div>
+  <button id="logoutBtn" class="hidden" onclick="logout()">Log out</button>
+</div>
+<div class="container" id="app"></div>
+
+<script>
+// Point this at your deployed Worker (see SETUP.md)
+const API_BASE = window.FORM_BUILDER_API_BASE || 'https://form-builder-api.YOUR_SUBDOMAIN.workers.dev';
+const PUBLIC_RENDERER_BASE = window.FORM_BUILDER_PUBLIC_BASE || 'https://YOUR_GITHUB_PAGES_DOMAIN/f';
+
+const ELEMENT_TYPES = [
+  ['heading','Heading'], ['paragraph','Paragraph'], ['image','Image'], ['button','Button'],
+  ['text_input','Text Input'], ['textarea','Long Text'], ['dropdown','Dropdown'],
+  ['checkbox','Checkboxes'], ['radio','Multiple Choice'], ['date','Date'],
+  ['number','Number'], ['email','Email'], ['file_upload','File Upload'], ['gallery','Image Gallery'],
+];
+
+let state = {
+  token: localStorage.getItem('fb_token') || null,
+  user: JSON.parse(localStorage.getItem('fb_user') || 'null'),
+  projects: [],
+  currentProject: null, // full row incl. config, when editing
+  editorTab: 'pages',
+  currentPageId: null,
+};
+
+function api(path, opts = {}){
+  opts.headers = Object.assign({}, opts.headers, state.token ? {Authorization:'Bearer '+state.token} : {});
+  if(opts.body && !(opts.body instanceof FormData)){
+    opts.headers['Content-Type'] = 'application/json';
+  }
+  return fetch(API_BASE+path, opts).then(async r=>{
+    const data = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(data.error || 'Request failed');
+    return data;
+  });
+}
+
+function uid(prefix){ return prefix + Math.random().toString(36).slice(2,10); }
+function escapeHtml(str){ return String(str==null?'':str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---------------- routing ----------------
+
+function render(){
+  document.getElementById('logoutBtn').classList.toggle('hidden', !state.token);
+  if(!state.token) return renderAuth();
+  if(state.currentProject) return renderEditor();
+  return renderDashboard();
+}
+
+// ---------------- auth ----------------
+
+function renderAuth(){
+  document.getElementById('app').innerHTML = `
+    <div class="auth-card">
+      <h1 id="authTitle">Log in</h1>
+      <div class="field-row"><label>Email</label><input id="authEmail" type="email"></div>
+      <div class="field-row"><label>Password</label><input id="authPassword" type="password"></div>
+      <button class="btn" style="width:100%" onclick="doAuth()">Log in</button>
+      <div class="error-msg hidden" id="authError"></div>
+      <p class="muted" style="margin-top:14px;">
+        <span id="authSwitchLabel">No account yet?</span>
+        <button class="link-btn" onclick="toggleAuthMode()" id="authSwitchBtn">Sign up</button>
+      </p>
+    </div>`;
+}
+let authMode = 'login';
+function toggleAuthMode(){
+  authMode = authMode === 'login' ? 'signup' : 'login';
+  document.getElementById('authTitle').textContent = authMode === 'login' ? 'Log in' : 'Create your account';
+  document.getElementById('authSwitchLabel').textContent = authMode === 'login' ? 'No account yet?' : 'Already have an account?';
+  document.getElementById('authSwitchBtn').textContent = authMode === 'login' ? 'Sign up' : 'Log in';
+}
+async function doAuth(){
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const errBox = document.getElementById('authError');
+  errBox.classList.add('hidden');
+  try{
+    const data = await api(`/api/auth/${authMode}`, { method:'POST', body: JSON.stringify({email,password}) });
+    state.token = data.token; state.user = data.user;
+    localStorage.setItem('fb_token', data.token);
+    localStorage.setItem('fb_user', JSON.stringify(data.user));
+    loadProjects();
+  }catch(e){
+    errBox.textContent = e.message; errBox.classList.remove('hidden');
+  }
+}
+function logout(){
+  state.token = null; state.user = null; state.currentProject = null;
+  localStorage.removeItem('fb_token'); localStorage.removeItem('fb_user');
+  render();
+}
+
+// ---------------- dashboard ----------------
+
+async function loadProjects(){
+  const data = await api('/api/projects');
+  state.projects = data.projects;
+  render();
+}
+
+function renderDashboard(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="dash-header">
+      <h2 style="margin:0;">Your projects</h2>
+      <button class="btn" onclick="createProject()">+ Create New</button>
+    </div>
+    <div id="projList"></div>`;
+  const list = document.getElementById('projList');
+  if(state.projects.length === 0){
+    list.innerHTML = '<p class="muted">Nothing here yet — create your first form or mini-website.</p>';
+    return;
+  }
+  list.innerHTML = state.projects.map(p => `
+    <div class="proj-card">
+      <div>
+        <div class="name">${escapeHtml(p.name)} <span class="pill ${p.published?'live':''}">${p.published?'Published':'Draft'}</span></div>
+        <div class="meta">/f/${p.slug} · updated ${new Date(p.updated_at).toLocaleDateString()}</div>
+      </div>
+      <div class="proj-actions">
+        ${p.published ? `<a class="btn small outline" href="${PUBLIC_RENDERER_BASE}/${p.slug}" target="_blank">View live</a>` : ''}
+        <button class="btn small" onclick="openProject('${p.id}')">Edit</button>
+        <button class="btn small danger" onclick="deleteProject('${p.id}','${escapeHtml(p.name)}')">Delete</button>
+      </div>
+    </div>`).join('');
+}
+
+async function createProject(){
+  const name = prompt('Name your new form / website:');
+  if(!name) return;
+  await api('/api/projects', { method:'POST', body: JSON.stringify({name}) });
+  loadProjects();
+}
+async function deleteProject(id, name){
+  if(!confirm(`Delete "${name}"? This also deletes its responses. This can't be undone.`)) return;
+  await api(`/api/projects/${id}`, { method:'DELETE' });
+  loadProjects();
+}
+async function openProject(id){
+  const data = await api(`/api/projects/${id}`);
+  state.currentProject = data;
+  state.currentPageId = data.config.pages[0] ? data.config.pages[0].id : null;
+  state.editorTab = 'pages';
+  render();
+}
+function backToDashboard(){
+  state.currentProject = null;
+  render();
+}
+
+// ---------------- editor shell ----------------
+
+async function saveProject(silent){
+  await api(`/api/projects/${state.currentProject.id}`, {
+    method:'PUT',
+    body: JSON.stringify({ name: state.currentProject.name, config: state.currentProject.config }),
+  });
+  if(!silent) flashSaved();
+}
+function flashSaved(){
+  const el = document.getElementById('saveFlash');
+  if(!el) return;
+  el.textContent = 'Saved';
+  setTimeout(()=>{ if(el) el.textContent=''; }, 1500);
+}
+
+function renderEditor(){
+  const p = state.currentProject;
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="dash-header">
+      <div>
+        <button class="link-btn" onclick="backToDashboard()">&larr; All projects</button>
+        <h2 style="margin:6px 0 0;">${escapeHtml(p.name)}</h2>
+        <div class="muted">/f/${p.slug} · <span id="saveFlash"></span></div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn outline" onclick="openPreview()">Preview</button>
+        <button class="btn outline" onclick="openPrefillBuilder()">Prefilled Link</button>
+        ${p.published
+          ? `<button class="btn outline" onclick="unpublish()">Unpublish</button>`
+          : `<button class="btn" onclick="publish()">Publish</button>`}
+      </div>
+    </div>
+    <div class="editor-tabs">
+      ${['pages','theme','buttons','whatsapp','media','responses'].map(t=>
+        `<button class="${state.editorTab===t?'active':''}" onclick="switchTab('${t}')">${t[0].toUpperCase()+t.slice(1)}</button>`
+      ).join('')}
+    </div>
+    <div id="tabBody"></div>`;
+  renderTabBody();
+}
+function switchTab(t){ state.editorTab = t; render(); }
+
+function renderTabBody(){
+  const body = document.getElementById('tabBody');
+  if(state.editorTab === 'pages') return renderPagesTab(body);
+  if(state.editorTab === 'theme') return renderThemeTab(body);
+  if(state.editorTab === 'buttons') return renderButtonsTab(body);
+  if(state.editorTab === 'whatsapp') return renderWhatsAppTab(body);
+  if(state.editorTab === 'media') return renderMediaTab(body);
+  if(state.editorTab === 'responses') return renderResponsesTab(body);
+}
+
+async function publish(){
+  const data = await api(`/api/projects/${state.currentProject.id}/publish`, {method:'POST'});
+  state.currentProject.published = 1;
+  render();
+  alert(`Published! Public link: ${PUBLIC_RENDERER_BASE}/${state.currentProject.slug}`);
+}
+async function unpublish(){
+  await api(`/api/projects/${state.currentProject.id}/unpublish`, {method:'POST'});
+  state.currentProject.published = 0;
+  render();
+}
+
+// ---------------- pages / elements tab ----------------
+
+function currentPage(){
+  return state.currentProject.config.pages.find(pg => pg.id === state.currentPageId);
+}
+
+function renderPagesTab(body){
+  const cfg = state.currentProject.config;
+  const pages = cfg.pages.slice().sort((a,b)=>a.order-b.order);
+  body.innerHTML = `
+    <div class="page-tabs">
+      ${pages.map(pg => `<span class="ptab ${pg.id===state.currentPageId?'active':''}" onclick="selectPage('${pg.id}')">${escapeHtml(pg.title)}</span>`).join('')}
+      <button class="btn small outline" onclick="addPage()">+ Page</button>
+      ${pages.length>1?`<button class="btn small danger" onclick="deletePage()">Delete page</button>`:''}
+    </div>
+    <div id="elementsList"></div>
+    <div class="add-el-row">
+      <select id="newElType">${ELEMENT_TYPES.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
+      <button class="btn" onclick="addElement()">+ Add Element</button>
+    </div>`;
+  renderElementsList();
+}
+
+function selectPage(id){ state.currentPageId = id; render(); }
+
+async function addPage(){
+  const title = prompt('Page title:', 'New Page') || 'New Page';
+  const cfg = state.currentProject.config;
+  const newPage = { id: uid('page_'), title, order: cfg.pages.length, elements: [] };
+  cfg.pages.push(newPage);
+  state.currentPageId = newPage.id;
+  await saveProject(true); render();
+}
+async function deletePage(){
+  const cfg = state.currentProject.config;
+  if(!confirm('Delete this page and all its elements?')) return;
+  cfg.pages = cfg.pages.filter(pg=>pg.id!==state.currentPageId).map((pg,i)=>({...pg, order:i}));
+  state.currentPageId = cfg.pages[0].id;
+  await saveProject(true); render();
+}
+
+function renderElementsList(){
+  const list = document.getElementById('elementsList');
+  const page = currentPage();
+  const els = page.elements.slice().sort((a,b)=>a.order-b.order);
+  if(els.length===0){ list.innerHTML = '<p class="muted">No elements on this page yet.</p>'; return; }
+  list.innerHTML = els.map((el,i) => `
+    <div class="el-card" draggable="true" data-el-id="${el.id}"
+         ondragstart="onElDragStart(event,'${el.id}')"
+         ondragover="onElDragOver(event,'${el.id}')"
+         ondragleave="onElDragLeave(event)"
+         ondrop="onElDrop(event,'${el.id}')"
+         ondragend="onElDragEnd(event)">
+      <div class="el-head">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
+          <span class="el-type">${el.type.replace('_',' ')}</span>
+        </div>
+        <div class="el-actions">
+          <button onclick="moveElement('${el.id}',-1)" ${i===0?'disabled':''} title="Move up">&uarr;</button>
+          <button onclick="moveElement('${el.id}',1)" ${i===els.length-1?'disabled':''} title="Move down">&darr;</button>
+          <button onclick="duplicateElement('${el.id}')">Duplicate</button>
+          <button onclick="toggleHideElement('${el.id}')">${el.hidden?'Show':'Hide'}</button>
+          <button onclick="deleteElement('${el.id}')">Delete</button>
+        </div>
+      </div>
+      ${renderElementProps(el)}
+    </div>`).join('');
+}
+
+// ---- drag-and-drop reordering (desktop pointer devices; the up/down
+// arrows above remain the reorder method on touch/mobile, where native
+// HTML5 drag-and-drop is unreliable) ----
+let dragElId = null;
+function onElDragStart(e, id){
+  dragElId = id;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+function onElDragOver(e, overId){
+  if(!dragElId || dragElId === overId) return;
+  e.preventDefault();
+  e.currentTarget.classList.add('drag-over');
+}
+function onElDragLeave(e){
+  e.currentTarget.classList.remove('drag-over');
+}
+function onElDrop(e, dropId){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if(!dragElId || dragElId === dropId) return;
+  const page = currentPage();
+  const els = page.elements.slice().sort((a,b)=>a.order-b.order);
+  const fromIdx = els.findIndex(el=>el.id===dragElId);
+  const toIdx = els.findIndex(el=>el.id===dropId);
+  const [moved] = els.splice(fromIdx, 1);
+  els.splice(toIdx, 0, moved);
+  els.forEach((el,i)=>{ el.order = i; });
+  dragElId = null;
+  saveProject(true); renderElementsList();
+}
+function onElDragEnd(e){
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.el-card.drag-over').forEach(el=>el.classList.remove('drag-over'));
+  dragElId = null;
+}
+
+function renderElementProps(el){
+  const p = el.props || {};
+  const set = (key, val) => `oninput="updateElProp('${el.id}','${key}', this.value)"`;
+  switch(el.type){
+    case 'heading':
+    case 'paragraph':
+      return `<div class="field-row"><label>Text</label><textarea ${set('text')}>${escapeHtml(p.text)}</textarea></div>`;
+    case 'button':
+      return `<div class="field-row"><label>Button text</label><input value="${escapeHtml(p.text)}" ${set('text')}></div>
+              <div class="field-row"><label>Link URL</label><input value="${escapeHtml(p.href)}" ${set('href')}></div>`;
+    case 'image':
+      return `<div class="field-row"><label>Media ID (upload in Media tab, then paste id)</label><input value="${escapeHtml(p.mediaId)}" ${set('mediaId')}></div>
+              <div class="field-row"><label>Alt text</label><input value="${escapeHtml(p.alt)}" ${set('alt')}></div>
+              <div class="field-row"><label>Caption</label><input value="${escapeHtml(p.caption)}" ${set('caption')}></div>`;
+    case 'gallery':
+      return renderGalleryProps(el);
+    case 'dropdown': case 'checkbox': case 'radio':
+      return `<div class="field-row"><label>Label</label><input value="${escapeHtml(p.label)}" ${set('label')}></div>
+              <div class="field-row opts-editor"><label>Options (one per line)</label><textarea onchange="updateElOptions('${el.id}', this.value)">${(p.options||[]).join('\n')}</textarea></div>
+              ${requiredAndPrefillRow(el)}`;
+    default:
+      return `<div class="field-row"><label>Label</label><input value="${escapeHtml(p.label)}" ${set('label')}></div>
+              <div class="field-row"><label>Placeholder</label><input value="${escapeHtml(p.placeholder)}" ${set('placeholder')}></div>
+              ${requiredAndPrefillRow(el)}`;
+  }
+}
+function requiredAndPrefillRow(el){
+  const p = el.props || {};
+  return `<div class="toggle-row">
+      <label><input type="checkbox" ${p.required?'checked':''} onchange="updateElProp('${el.id}','required', this.checked)"> Required</label>
+      <span style="display:flex;align-items:center;gap:6px;">
+        <span class="muted">Prefill key</span>
+        <input style="width:110px;" value="${escapeHtml(p.prefillKey)}" oninput="updateElProp('${el.id}','prefillKey', this.value)">
+      </span>
+    </div>`;
+}
+
+function renderGalleryProps(el){
+  const images = (el.props && el.props.images) || [];
+  return `<div class="gallery-editor">
+    <div class="media-grid" style="margin-bottom:10px;">
+      ${images.map((img,i) => `
+        <div class="media-item">
+          <img src="${API_BASE}/api/media/${img.mediaId}/file" onerror="this.style.display='none'">
+          <input placeholder="Caption" value="${escapeHtml(img.caption||'')}" oninput="updateGalleryImage('${el.id}',${i},'caption',this.value)" style="width:100%;font-size:11px;margin-top:4px;">
+          <input placeholder="Alt text" value="${escapeHtml(img.alt||'')}" oninput="updateGalleryImage('${el.id}',${i},'alt',this.value)" style="width:100%;font-size:11px;margin-top:2px;">
+          <div style="display:flex;gap:2px;justify-content:center;margin-top:4px;">
+            <button class="btn small outline" onclick="moveGalleryImage('${el.id}',${i},-1)" ${i===0?'disabled':''}>&uarr;</button>
+            <button class="btn small outline" onclick="moveGalleryImage('${el.id}',${i},1)" ${i===images.length-1?'disabled':''}>&darr;</button>
+            <button class="btn small danger" onclick="removeGalleryImage('${el.id}',${i})">&times;</button>
+          </div>
+        </div>`).join('') || '<p class="muted">No images yet.</p>'}
+    </div>
+    <div class="field-row"><label>Add image — paste a media ID from the Media tab</label>
+      <div style="display:flex;gap:6px;">
+        <input id="galleryAddInput-${el.id}" placeholder="media id" style="flex:1;">
+        <button class="btn small" onclick="addGalleryImage('${el.id}')">Add</button>
+      </div>
+    </div>
+  </div>`;
+}
+function galleryFor(elId){ return findElement(elId); }
+function addGalleryImage(elId){
+  const input = document.getElementById(`galleryAddInput-${elId}`);
+  const mediaId = input.value.trim();
+  if(!mediaId) return;
+  const el = galleryFor(elId);
+  el.props.images = el.props.images || [];
+  el.props.images.push({ mediaId, caption:'', alt:'' });
+  saveProject(true); renderElementsList();
+}
+function updateGalleryImage(elId, idx, key, val){
+  const el = galleryFor(elId);
+  el.props.images[idx][key] = val;
+  saveProject(true);
+}
+function moveGalleryImage(elId, idx, dir){
+  const el = galleryFor(elId);
+  const imgs = el.props.images;
+  const swapIdx = idx+dir;
+  if(swapIdx<0 || swapIdx>=imgs.length) return;
+  [imgs[idx], imgs[swapIdx]] = [imgs[swapIdx], imgs[idx]];
+  saveProject(true); renderElementsList();
+}
+function removeGalleryImage(elId, idx){
+  const el = galleryFor(elId);
+  el.props.images.splice(idx,1);
+  saveProject(true); renderElementsList();
+}
+
+function findElement(id){
+  for(const pg of state.currentProject.config.pages){
+    const el = pg.elements.find(e=>e.id===id);
+    if(el) return el;
+  }
+  return null;
+}
+function updateElProp(id, key, val){
+  const el = findElement(id);
+  el.props = el.props || {};
+  el.props[key] = val;
+  saveProject(true);
+}
+function updateElOptions(id, text){
+  const el = findElement(id);
+  el.props = el.props || {};
+  el.props.options = text.split('\n').map(s=>s.trim()).filter(Boolean);
+  saveProject(true); renderElementsList();
+}
+function addElement(){
+  const type = document.getElementById('newElType').value;
+  const page = currentPage();
+  const el = { id: uid('el_'), type, order: page.elements.length, hidden:false, props: defaultPropsFor(type) };
+  page.elements.push(el);
+  saveProject(true); renderElementsList();
+}
+function defaultPropsFor(type){
+  if(type==='heading') return { text:'Heading' };
+  if(type==='paragraph') return { text:'Some text' };
+  if(type==='button') return { text:'Click me', href:'' };
+  if(type==='image') return { mediaId:'', alt:'', caption:'' };
+  if(['dropdown','checkbox','radio'].includes(type)) return { label:'Choose an option', options:['Option 1','Option 2'], required:false, prefillKey:'' };
+  if(type==='gallery') return { images:[] };
+  return { label:'Label', placeholder:'', required:false, prefillKey:'' };
+}
+function moveElement(id, dir){
+  const page = currentPage();
+  const els = page.elements.slice().sort((a,b)=>a.order-b.order);
+  const idx = els.findIndex(e=>e.id===id);
+  const swapIdx = idx+dir;
+  if(swapIdx<0 || swapIdx>=els.length) return;
+  [els[idx].order, els[swapIdx].order] = [els[swapIdx].order, els[idx].order];
+  saveProject(true); renderElementsList();
+}
+function duplicateElement(id){
+  const page = currentPage();
+  const el = page.elements.find(e=>e.id===id);
+  const copy = JSON.parse(JSON.stringify(el));
+  copy.id = uid('el_'); copy.order = page.elements.length;
+  page.elements.push(copy);
+  saveProject(true); renderElementsList();
+}
+function toggleHideElement(id){
+  const el = findElement(id);
+  el.hidden = !el.hidden;
+  saveProject(true); renderElementsList();
+}
+function deleteElement(id){
+  const page = currentPage();
+  page.elements = page.elements.filter(e=>e.id!==id);
+  saveProject(true); renderElementsList();
+}
+
+// ---------------- theme tab ----------------
+
+function renderThemeTab(body){
+  const t = state.currentProject.config.theme;
+  body.innerHTML = `
+    <div class="settings-block">
+      <h3>Appearance</h3>
+      <div class="field-row"><label>Primary color</label><input type="color" value="${t.primaryColor}" oninput="updateTheme('primaryColor', this.value)"></div>
+      <div class="field-row"><label>Background color</label><input type="color" value="${t.backgroundColor}" oninput="updateTheme('backgroundColor', this.value)"></div>
+      <div class="field-row"><label>Logo media ID</label><input value="${escapeHtml(t.logoMediaId||'')}" oninput="updateTheme('logoMediaId', this.value)"></div>
+      <div class="field-row"><label>Banner media ID</label><input value="${escapeHtml(t.bannerMediaId||'')}" oninput="updateTheme('bannerMediaId', this.value)"></div>
+      <p class="muted">Upload images in the Media tab, then paste the media ID here or into an Image element.</p>
+    </div>`;
+}
+function updateTheme(key, val){
+  state.currentProject.config.theme[key] = val;
+  saveProject(true);
+}
+
+// ---------------- buttons tab ----------------
+
+function renderButtonsTab(body){
+  const B = state.currentProject.config.buttons;
+  body.innerHTML = `<div class="settings-block"><h3>Buttons</h3>` +
+    Object.keys(B).map(key => `
+      <div class="toggle-row">
+        <label><input type="checkbox" ${B[key].enabled?'checked':''} onchange="updateButton('${key}','enabled', this.checked)"> ${key[0].toUpperCase()+key.slice(1)}</label>
+        <input style="width:160px;" value="${escapeHtml(B[key].text)}" oninput="updateButton('${key}','text', this.value)">
+      </div>`).join('') + `</div>`;
+}
+function updateButton(key, prop, val){
+  state.currentProject.config.buttons[key][prop] = val;
+  saveProject(true);
+}
+
+// ---------------- whatsapp tab ----------------
+
+function renderWhatsAppTab(body){
+  const W = state.currentProject.config.whatsapp;
+  body.innerHTML = `
+    <div class="settings-block">
+      <h3>WhatsApp</h3>
+      <div class="toggle-row">
+        <label><input type="checkbox" ${W.enabled?'checked':''} onchange="updateWA('enabled', this.checked)"> Send a prefilled WhatsApp message on submit</label>
+      </div>
+      <div class="field-row"><label>WhatsApp number (with country code, digits only)</label><input value="${escapeHtml(W.number)}" oninput="updateWA('number', this.value)"></div>
+      <div class="field-row"><label>Message template — use {{prefillKey}} for any field's Prefill key</label>
+        <textarea oninput="updateWA('messageTemplate', this.value)">${escapeHtml(W.messageTemplate)}</textarea>
+      </div>
+    </div>`;
+}
+function updateWA(key, val){
+  state.currentProject.config.whatsapp[key] = val;
+  saveProject(true);
+}
+
+// ---------------- media tab ----------------
+
+async function renderMediaTab(body){
+  body.innerHTML = `
+    <div class="settings-block">
+      <h3>Media</h3>
+      <input type="file" id="mediaFile"> <button class="btn small" onclick="uploadMedia()">Upload</button>
+      <div class="media-grid" id="mediaGrid" style="margin-top:14px;"></div>
+    </div>`;
+  const data = await api(`/api/media?projectId=${state.currentProject.id}`);
+  document.getElementById('mediaGrid').innerHTML = data.media.map(m => `
+    <div class="media-item">
+      <img src="${API_BASE}/api/media/${m.id}/file" onerror="this.style.display='none'">
+      <div>${escapeHtml(m.original_name||'')}</div>
+      <div class="muted" style="font-size:10px;">${m.id}</div>
+      <button class="btn small danger" style="margin-top:4px;" onclick="deleteMedia('${m.id}')">Delete</button>
+    </div>`).join('') || '<p class="muted">No uploads yet.</p>';
+}
+async function uploadMedia(){
+  const fileInput = document.getElementById('mediaFile');
+  if(!fileInput.files[0]) return alert('Choose a file first.');
+  const form = new FormData();
+  form.append('projectId', state.currentProject.id);
+  form.append('kind', 'asset');
+  form.append('file', fileInput.files[0]);
+  await api('/api/media/upload', { method:'POST', body: form });
+  renderMediaTab(document.getElementById('tabBody'));
+}
+async function deleteMedia(id){
+  if(!confirm('Delete this file?')) return;
+  await api(`/api/media/${id}`, { method:'DELETE' });
+  renderMediaTab(document.getElementById('tabBody'));
+}
+
+// ---------------- responses tab ----------------
+
+async function renderResponsesTab(body){
+  body.innerHTML = '<p class="muted">Loading responses…</p>';
+  const data = await api(`/api/projects/${state.currentProject.id}/responses`);
+  if(data.responses.length===0){ body.innerHTML = '<p class="muted">No submissions yet.</p>'; return; }
+  window._responses = data.responses;
+  window._respVisible = data.responses;
+  body.innerHTML = `
+    <div style="margin-bottom:10px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <input id="respSearch" placeholder="Search responses…" oninput="filterResponses()" style="padding:8px;border:1px solid var(--border);border-radius:4px;width:200px;">
+        <input id="respFrom" type="date" title="From date" onchange="filterResponses()" style="padding:8px;border:1px solid var(--border);border-radius:4px;">
+        <input id="respTo" type="date" title="To date" onchange="filterResponses()" style="padding:8px;border:1px solid var(--border);border-radius:4px;">
+      </div>
+      <button class="btn small outline" onclick="downloadResponsesCsv()">Download CSV (<span id="respCount">${data.responses.length}</span> shown)</button>
+    </div>
+    <table class="resp-table"><thead><tr><th>Submitted</th><th>Summary</th><th></th></tr></thead>
+    <tbody id="respRows"></tbody></table>`;
+  renderResponseRows(data.responses);
+}
+function renderResponseRows(rows){
+  window._respVisible = rows;
+  const countEl = document.getElementById('respCount');
+  if(countEl) countEl.textContent = rows.length;
+  document.getElementById('respRows').innerHTML = rows.map(r => `
+    <tr>
+      <td>${new Date(r.created_at).toLocaleString()}</td>
+      <td>${escapeHtml(JSON.stringify(r.data).slice(0,80))}…</td>
+      <td>
+        <button class="btn small outline" onclick='viewResponse(${JSON.stringify(r.id)})'>View</button>
+        <button class="btn small danger" onclick="deleteResponse('${r.id}')">Delete</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="3" class="muted">No responses match this filter.</td></tr>';
+}
+function filterResponses(){
+  const term = (document.getElementById('respSearch').value || '').toLowerCase();
+  const from = document.getElementById('respFrom').value;
+  const to = document.getElementById('respTo').value;
+  const filtered = window._responses.filter(r => {
+    if(term && !JSON.stringify(r.data).toLowerCase().includes(term)) return false;
+    const day = r.created_at.slice(0,10);
+    if(from && day < from) return false;
+    if(to && day > to) return false;
+    return true;
+  });
+  renderResponseRows(filtered);
+}
+function viewResponse(id){
+  const r = window._responses.find(x=>x.id===id);
+  alert(JSON.stringify(r.data, null, 2));
+}
+async function deleteResponse(id){
+  if(!confirm('Delete this response?')) return;
+  await api(`/api/responses/${id}`, { method:'DELETE' });
+  renderResponsesTab(document.getElementById('tabBody'));
+}
+function downloadResponsesCsv(){
+  const rows = window._respVisible || window._responses;
+  const keys = [...new Set(rows.flatMap(r=>Object.keys(r.data)))];
+  const csv = [ ['submitted_at', ...keys].join(',') ]
+    .concat(rows.map(r => [r.created_at, ...keys.map(k=>{
+      const v = r.data[k];
+      const s = v==null ? '' : (typeof v==='object' ? JSON.stringify(v) : String(v));
+      return '"' + s.replace(/"/g,'""') + '"';
+    })].join(',')))
+    .join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${state.currentProject.slug}-responses.csv`;
+  a.click();
+}
+
+// ---------------- prefilled link generator ----------------
+
+function collectPrefillFields(){
+  const fields = [];
+  state.currentProject.config.pages.forEach(page => page.elements.forEach(el => {
+    const key = el.props && el.props.prefillKey;
+    if(key) fields.push({ key, label: (el.props.label || el.props.text || key) });
+  }));
+  return fields;
+}
+
+function openPrefillBuilder(){
+  const fields = collectPrefillFields();
+  const modal = document.createElement('div');
+  modal.className = 'modal-bg';
+  modal.onclick = (e)=>{ if(e.target===modal) modal.remove(); };
+  const inner = document.createElement('div');
+  inner.className = 'modal-box';
+  if(fields.length === 0){
+    inner.innerHTML = `<h3 style="margin-top:0;">Prefilled Link</h3>
+      <p class="muted">No fields have a Prefill key set yet. Open a field in the Pages tab and set its "Prefill key" to include it here.</p>
+      <div style="text-align:right;"><button class="btn small outline" onclick="this.closest('.modal-bg').remove()">Close</button></div>`;
+  } else {
+    inner.innerHTML = `<h3 style="margin-top:0;">Prefilled Link</h3>
+      <p class="muted">Fill in any fields you want pre-populated — leave the rest blank.</p>
+      ${fields.map(f => `<div class="field-row"><label>${escapeHtml(f.label)} <span class="muted">(${escapeHtml(f.key)})</span></label>
+        <input id="pf-${escapeHtml(f.key)}" oninput="updatePrefillUrl()"></div>`).join('')}
+      <div class="field-row"><label>Generated link</label>
+        <textarea id="prefillUrlOut" readonly style="min-height:50px;"></textarea></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn small outline" onclick="copyPrefillUrl()">Copy Link</button>
+        <button class="btn small outline" onclick="this.closest('.modal-bg').remove()">Close</button>
+      </div>`;
+  }
+  modal.appendChild(inner);
+  document.body.appendChild(modal);
+  if(fields.length) updatePrefillUrl();
+}
+function updatePrefillUrl(){
+  const fields = collectPrefillFields();
+  const params = new URLSearchParams();
+  fields.forEach(f => {
+    const input = document.getElementById(`pf-${f.key}`);
+    if(input && input.value.trim()) params.set(f.key, input.value.trim());
+  });
+  const qs = params.toString();
+  const url = `${PUBLIC_RENDERER_BASE}/${state.currentProject.slug}${qs ? '?' + qs : ''}`;
+  const out = document.getElementById('prefillUrlOut');
+  if(out) out.value = url;
+}
+function copyPrefillUrl(){
+  const out = document.getElementById('prefillUrlOut');
+  out.select();
+  navigator.clipboard.writeText(out.value).then(()=>{
+    alert('Link copied.');
+  }).catch(()=>{
+    document.execCommand('copy');
+  });
+}
+
+// ---------------- in-app preview (renders the full draft multi-page flow, no publish needed, nothing is submitted) ----------------
+
+let previewIndex = 0;
+let previewValues = {};
+
+function openPreview(){
+  previewIndex = 0;
+  previewValues = {};
+  const modal = document.createElement('div');
+  modal.className = 'modal-bg';
+  modal.id = 'previewModal';
+  modal.onclick = (e)=>{ if(e.target===modal) modal.remove(); };
+  const inner = document.createElement('div');
+  inner.className = 'modal-box';
+  inner.innerHTML = `<div style="text-align:right;"><button class="link-btn" onclick="this.closest('.modal-bg').remove()">Close preview</button></div>
+    <div class="preview-frame" id="previewFrame"></div>`;
+  modal.appendChild(inner);
+  document.body.appendChild(modal);
+  renderPreviewContent();
+}
+
+function renderPreviewContent(){
+  const cfg = state.currentProject.config;
+  const pages = cfg.pages.slice().sort((a,b)=>a.order-b.order);
+  const page = pages[previewIndex];
+  const isFirst = previewIndex === 0;
+  const isLast = previewIndex === pages.length - 1;
+  const B = cfg.buttons || {};
+  const frame = document.getElementById('previewFrame');
+  if(!frame) return;
+  frame.style.background = cfg.theme.backgroundColor;
+
+  let html = `<p class="muted" style="margin:0 0 10px;">Page ${previewIndex+1} of ${pages.length} — preview only, nothing is submitted</p>`;
+  html += page.elements.filter(el=>!el.hidden).sort((a,b)=>a.order-b.order).map(el=>previewFieldHtml(el, cfg)).join('');
+  html += `<div class="btn-bar" style="padding:8px 0 0;">
+      <div class="left">${(B.back && B.back.enabled !== false && !isFirst) ? `<button class="btn small outline" onclick="previewGoBack()">${escapeHtml(B.back.text||'Back')}</button>` : ''}</div>
+      <div>${isLast
+        ? (B.submit && B.submit.enabled !== false ? `<button class="btn small" onclick="alert('This is a preview — nothing was submitted.')">${escapeHtml(B.submit.text||'Submit')}</button>` : '')
+        : (B.next && B.next.enabled !== false ? `<button class="btn small" onclick="previewGoNext()">${escapeHtml(B.next.text||'Next')}</button>` : '')}
+      </div>
+    </div>`;
+  frame.innerHTML = html;
+}
+
+function previewFieldHtml(el, cfg){
+  const p = el.props || {};
+  const val = previewValues[el.id];
+  switch(el.type){
+    case 'heading': return `<h2>${escapeHtml(p.text)}</h2>`;
+    case 'paragraph': return `<p>${escapeHtml(p.text)}</p>`;
+    case 'image': return p.mediaId ? `<img style="max-width:100%;border-radius:6px;" src="${API_BASE}/api/media/${p.mediaId}/file">` : '<p class="muted">[image]</p>';
+    case 'gallery': return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${(p.images||[]).map(img=>`<img src="${API_BASE}/api/media/${img.mediaId}/file" style="width:70px;height:70px;object-fit:cover;border-radius:4px;">`).join('') || '<span class="muted">[gallery]</span>'}</div>`;
+    case 'button': return `<p><span style="background:${cfg.theme.primaryColor};color:#fff;padding:8px 16px;border-radius:4px;display:inline-block;">${escapeHtml(p.text)}</span></p>`;
+    case 'dropdown':
+      return previewFieldWrap(el, `<select class="answer" id="pv-${el.id}" style="width:100%;padding:6px 0;border:none;border-bottom:1px solid var(--border);"><option value="">Choose</option>${(p.options||[]).map(o=>`<option ${val===o?'selected':''}>${escapeHtml(o)}</option>`).join('')}</select>`);
+    case 'checkbox':
+      return previewFieldWrap(el, (p.options||[]).map(o=>`<label class="opt-row" style="display:flex;gap:8px;align-items:center;font-size:14px;"><input type="checkbox" name="pvcb-${el.id}" value="${escapeHtml(o)}"> ${escapeHtml(o)}</label>`).join(''));
+    case 'radio':
+      return previewFieldWrap(el, (p.options||[]).map(o=>`<label class="opt-row" style="display:flex;gap:8px;align-items:center;font-size:14px;"><input type="radio" name="pvrd-${el.id}" value="${escapeHtml(o)}"> ${escapeHtml(o)}</label>`).join(''));
+    case 'file_upload':
+      return previewFieldWrap(el, `<p class="muted" style="margin:0;">File uploads aren't testable in preview — try it on the published link.</p>`);
+    default:
+      return previewFieldWrap(el, `<input class="answer" id="pv-${el.id}" type="${el.type==='text_input'?'text':el.type}" placeholder="${escapeHtml(p.placeholder||'')}" value="${escapeHtml(val||'')}" style="width:100%;padding:6px 0;border:none;border-bottom:1px solid var(--border);">`);
+  }
+}
+function previewFieldWrap(el, inner){
+  const p = el.props||{};
+  return `<div class="field" id="pv-field-${el.id}" style="margin-bottom:18px;">
+    <div class="field-label" style="font-size:14px;margin-bottom:6px;">${escapeHtml(p.label||'')}${p.required?'<span style="color:var(--red);"> *</span>':''}</div>
+    ${inner}
+    <div class="err" style="display:none;color:var(--red);font-size:12px;margin-top:4px;">This field is required.</div>
+  </div>`;
+}
+function previewCollectAndValidate(){
+  const cfg = state.currentProject.config;
+  const pages = cfg.pages.slice().sort((a,b)=>a.order-b.order);
+  const page = pages[previewIndex];
+  let ok = true;
+  page.elements.filter(el=>!el.hidden).forEach(el=>{
+    const p = el.props||{};
+    const fieldEl = document.getElementById(`pv-field-${el.id}`);
+    if(!fieldEl) return;
+    let val;
+    if(el.type==='checkbox') val = [...document.querySelectorAll(`input[name="pvcb-${el.id}"]:checked`)].map(i=>i.value);
+    else if(el.type==='radio'){ const c=document.querySelector(`input[name="pvrd-${el.id}"]:checked`); val = c?c.value:''; }
+    else { const i=document.getElementById(`pv-${el.id}`); val = i?i.value.trim():''; }
+    const empty = val==='' || val==null || (Array.isArray(val)&&val.length===0);
+    const errEl = fieldEl.querySelector('.err');
+    if(p.required && empty){
+      fieldEl.style.outline = '1.5px solid var(--red)';
+      if(errEl) errEl.style.display = 'block';
+      ok = false;
+    } else {
+      fieldEl.style.outline = 'none';
+      if(errEl) errEl.style.display = 'none';
+      previewValues[el.id] = val;
+    }
+  });
+  return ok;
+}
+function previewGoNext(){
+  if(!previewCollectAndValidate()) return;
+  previewIndex++;
+  renderPreviewContent();
+}
+function previewGoBack(){
+  previewIndex--;
+  renderPreviewContent();
+}
+
+// ---------------- boot ----------------
+
+if(state.token) loadProjects(); else render();
+</script>
+</body>
+</html>
