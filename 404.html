@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Not found</title>
+<script>
+  // GitHub Pages only serves files that actually exist, so a visit to
+  // /f/abc123 (which has no matching file — only /f/index.html does)
+  // lands here. If the path is under /f/, stash it and hand off to the
+  // renderer, which restores the pretty URL via history.replaceState.
+  // Anything else under /f/ gets a real "wrong path" message below;
+  // paths outside /f/ just show the plain not-found message.
+  var path = location.pathname + location.search + location.hash;
+  if (location.pathname.indexOf('/f/') === 0) {
+    sessionStorage.setItem('fb_redirect_path', path);
+    location.replace('/f/index.html');
+  }
+</script>
+<style>
+  body{font-family:Arial,sans-serif;text-align:center;padding:80px 20px;color:#5F6368;}
+</style>
+</head>
+<body>
+  <h1>Page not found</h1>
+  <p>The link you followed doesn't match anything here.</p>
+</body>
+</html>
