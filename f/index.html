@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loading…</title>
+<script>window.FORM_BUILDER_API_BASE = 'https://form-builder-api.senlysuchiang87.workers.dev';</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --primary:#4B39D6;
+    --bg:#EEEDFB;
+    --text:#1F1F1F;
+    --gray:#5F6368;
+    --border:#DADCE0;
+    --red:#D93025;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Roboto',Arial,sans-serif;min-height:100vh;}
+  .wrap{max-width:640px;margin:0 auto;padding:24px 16px 60px;}
+  .card{background:#fff;border-radius:8px;box-shadow:0 1px 2px rgba(60,64,67,.15),0 1px 3px rgba(60,64,67,.1);margin-bottom:16px;overflow:hidden;}
+  .top-bar{height:10px;background:var(--primary);}
+  .banner img{width:100%;display:block;}
+  .card-body{padding:20px 24px 24px;}
+  .logo{max-height:48px;display:block;margin-bottom:12px;}
+  h1.el-heading{font-size:26px;font-weight:400;margin:0 0 8px;}
+  p.el-paragraph{font-size:14px;line-height:22px;color:var(--text);white-space:pre-line;margin:0 0 8px;}
+  .el-image img{max-width:100%;border-radius:6px;display:block;margin:8px 0;}
+  .el-gallery{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;}
+  .el-gallery .gallery-item{width:calc(33.333% - 6px);}
+  .el-gallery img{width:100%;height:110px;object-fit:cover;border-radius:6px;display:block;}
+  .el-gallery .gallery-caption{font-size:12px;color:var(--gray);margin:4px 0 0;}
+  .field-label{font-size:14px;margin-bottom:8px;}
+  .field-label .req{color:var(--red);margin-left:2px;}
+  input.answer,select.answer,textarea.answer{
+    width:100%;border:none;border-bottom:1px solid var(--border);
+    padding:6px 0 8px;font-family:'Roboto',Arial,sans-serif;font-size:14px;
+    background:transparent;color:var(--text);
+  }
+  input.answer:focus,select.answer:focus,textarea.answer:focus{outline:none;border-bottom:2px solid var(--primary);}
+  .field{margin-bottom:22px;}
+  .field.invalid input,.field.invalid select,.field.invalid textarea{border-bottom:1.5px solid var(--red);}
+  .field .err{display:none;color:var(--red);font-size:12px;margin-top:6px;}
+  .field.invalid .err{display:block;}
+  .opt-row{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:14px;}
+  .btn-bar{display:flex;justify-content:space-between;align-items:center;padding:8px 0 32px;}
+  .btn-bar .left{display:flex;gap:8px;}
+  button.gbtn{font-family:'Roboto',Arial,sans-serif;font-size:14px;font-weight:500;padding:9px 24px;border-radius:4px;cursor:pointer;border:1px solid transparent;}
+  button.gbtn.outline{background:#fff;border:1px solid var(--border);color:var(--text);}
+  button.gbtn.filled{background:var(--primary);color:#fff;}
+  button.gbtn.filled:hover{filter:brightness(0.92);}
+  .el-button a, .el-button button{display:inline-block;background:var(--primary);color:#fff;text-decoration:none;padding:10px 20px;border-radius:4px;font-size:14px;border:none;cursor:pointer;}
+  .state{text-align:center;padding:60px 20px;color:var(--gray);font-size:14px;}
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div class="state" id="loadingState">Loading…</div>
+</div>
+
+<script>
+(function(){
+  var redirect = sessionStorage.getItem('fb_redirect_path');
+  if(redirect){
+    sessionStorage.removeItem('fb_redirect_path');
+    history.replaceState(null, '', redirect);
+  }
+})();
+
+const API_BASE = window.FORM_BUILDER_API_BASE || 'https://form-builder-api.YOUR_SUBDOMAIN.workers.dev';
+
+function getSlug(){
+  const params = new URLSearchParams(location.search);
+  if (params.get('slug')) return params.get('slug');
+  const parts = location.pathname.split('/').filter(Boolean);
+  return parts[parts.length - 1] || '';
+}
+
+let project = null;
+let currentPageIndex = 0;
+const values = {};
+let mediaUploads = {};
+
+async function init(){
+  const slug = getSlug();
+  const app = document.getElementById('app');
+  try{
+    const res = await fetch(`${API_BASE}/api/public/${slug}`);
+    if(!res.ok) throw new Error('not found');
+    const data = await res.json();
+    project = data;
+    document.title = data.name || 'Form';
+    applyTheme(data.config.theme);
+    applyPrefill(data.config);
+    render();
+  }catch(e){
+    app.innerHTML = '<div class="state">This form isn\'t available. Check the link and try again.</div>';
+  }
+}
+
+function applyTheme(theme){
+  if(!theme) return;
+  document.documentElement.style.setProperty('--primary', theme.primaryColor || '#4B39D6');
+  document.documentElement.style.setProperty('--bg', theme.backgroundColor || '#EEEDFB');
+}
+
+function applyPrefill(config){
+  const params = new URLSearchParams(location.search);
+  config.pages.forEach(page => page.elements.forEach(el => {
+    const key = el.props && el.props.prefillKey;
+    if(key && params.has(key)) values[el.id] = params.get(key);
+  }));
+}
+
+function render(){
+  const app = document.getElementById('app');
+  const pages = project.config.pages.slice().sort((a,b)=>a.order-b.order);
+  const page = pages[currentPageIndex];
+  const isLast = currentPageIndex === pages.length - 1;
+  const isFirst = currentPageIndex === 0;
+  const B = project.config.buttons || {};
+  const theme = project.config.theme || {};
+
+  let html = '<div class="card"><div class="top-bar"></div>';
+  if(theme.bannerMediaId) html += `<div class="banner"><img src="${API_BASE}/api/media/${theme.bannerMediaId}/file"></div>`;
+  html += '<div class="card-body">';
+  if(theme.logoMediaId) html += `<img class="logo" src="${API_BASE}/api/media/${theme.logoMediaId}/file">`;
+
+  page.elements.filter(el=>!el.hidden).sort((a,b)=>a.order-b.order).forEach(el=>{
+    html += renderElement(el);
+  });
+  html += '</div></div>';
+
+  html += '<div class="btn-bar"><div class="left">';
+  if(B.back && B.back.enabled && !isFirst) html += `<button class="gbtn outline" onclick="goBack()">${escapeHtml(B.back.text)}</button>`;
+  html += '</div><div class="right">';
+  if(isLast){
+    if(B.submit && B.submit.enabled !== false) html += `<button class="gbtn filled" onclick="submitForm()">${escapeHtml(B.submit.text || 'Submit')}</button>`;
+  } else {
+    if(B.next && B.next.enabled !== false) html += `<button class="gbtn filled" onclick="goNext()">${escapeHtml(B.next.text || 'Next')}</button>`;
+  }
+  html += '</div></div>';
+
+  app.innerHTML = html;
+  bindInputs();
+}
+
+function renderElement(el){
+  const p = el.props || {};
+  switch(el.type){
+    case 'heading': return `<h1 class="el-heading">${escapeHtml(p.text||'')}</h1>`;
+    case 'paragraph': return `<p class="el-paragraph">${escapeHtml(p.text||'')}</p>`;
+    case 'image': return `<div class="el-image">${p.mediaId ? `<img src="${API_BASE}/api/media/${p.mediaId}/file" alt="${escapeHtml(p.alt||'')}">` : ''}${p.caption?`<p class="el-paragraph">${escapeHtml(p.caption)}</p>`:''}</div>`;
+    case 'gallery': return `<div class="el-gallery">${(p.images||[]).map(img=>`<div class="gallery-item"><img src="${API_BASE}/api/media/${img.mediaId}/file" alt="${escapeHtml(img.alt||'')}">${img.caption?`<p class="gallery-caption">${escapeHtml(img.caption)}</p>`:''}</div>`).join('')}</div>`;
+    case 'button': return `<div class="el-button"><a href="${p.href||'#'}" target="_blank" rel="noopener">${escapeHtml(p.text||'Button')}</a></div>`;
+    case 'text_input': case 'email': case 'number': case 'date':
+      return field(el, `<input class="answer" type="${el.type==='text_input'?'text':el.type}" id="in-${el.id}" placeholder="${escapeHtml(p.placeholder||'')}" value="${escapeHtml(values[el.id]||'')}">`);
+    case 'textarea':
+      return field(el, `<textarea class="answer" id="in-${el.id}" rows="3" placeholder="${escapeHtml(p.placeholder||'')}">${escapeHtml(values[el.id]||'')}</textarea>`);
+    case 'dropdown':
+      return field(el, `<select class="answer" id="in-${el.id}"><option value="">Choose</option>${(p.options||[]).map(o=>`<option value="${escapeHtml(o)}" ${values[el.id]===o?'selected':''}>${escapeHtml(o)}</option>`).join('')}</select>`);
+    case 'checkbox':
+      return field(el, (p.options||[]).map((o,i)=>`<label class="opt-row"><input type="checkbox" name="cb-${el.id}" value="${escapeHtml(o)}"> ${escapeHtml(o)}</label>`).join(''));
+    case 'radio':
+      return field(el, (p.options||[]).map((o,i)=>`<label class="opt-row"><input type="radio" name="rd-${el.id}" value="${escapeHtml(o)}"> ${escapeHtml(o)}</label>`).join(''));
+    case 'file_upload':
+      return field(el, `<input class="answer" type="file" id="in-${el.id}">`);
+    default: return '';
+  }
+}
+
+function field(el, innerHtml){
+  const p = el.props || {};
+  return `<div class="field" id="field-${el.id}">
+    <div class="field-label">${escapeHtml(p.label||'')}${p.required?'<span class="req">*</span>':''}</div>
+    ${innerHtml}
+    <div class="err">This field is required.</div>
+  </div>`;
+}
+
+function bindInputs(){}
+
+function currentPageElements(){
+  const pages = project.config.pages.slice().sort((a,b)=>a.order-b.order);
+  return pages[currentPageIndex].elements.filter(el=>!el.hidden);
+}
+
+function collectPageValues(){
+  let ok = true;
+  currentPageElements().forEach(el=>{
+    const p = el.props || {};
+    const fieldEl = document.getElementById(`field-${el.id}`);
+    if(!fieldEl) return;
+    let val;
+    if(el.type === 'checkbox'){
+      val = [...document.querySelectorAll(`input[name="cb-${el.id}"]:checked`)].map(i=>i.value);
+    } else if(el.type === 'radio'){
+      const checked = document.querySelector(`input[name="rd-${el.id}"]:checked`);
+      val = checked ? checked.value : '';
+    } else if(el.type === 'file_upload'){
+      const inputEl = document.getElementById(`in-${el.id}`);
+      val = inputEl && inputEl.files[0] ? inputEl.files[0] : null;
+    } else {
+      const inputEl = document.getElementById(`in-${el.id}`);
+      val = inputEl ? inputEl.value.trim() : '';
+    }
+    const empty = val === '' || val === null || (Array.isArray(val) && val.length === 0);
+    if(p.required && empty){
+      fieldEl.classList.add('invalid');
+      ok = false;
+    } else {
+      fieldEl.classList.remove('invalid');
+      values[el.id] = val;
+    }
+  });
+  return ok;
+}
+
+function goNext(){
+  if(!collectPageValues()) return;
+  currentPageIndex++;
+  window.scrollTo({top:0,behavior:'smooth'});
+  render();
+}
+function goBack(){
+  currentPageIndex--;
+  window.scrollTo({top:0,behavior:'smooth'});
+  render();
+}
+
+async function submitForm(){
+  if(!collectPageValues()) return;
+
+  for(const [elId, val] of Object.entries(values)){
+    if(val instanceof File){
+      const form = new FormData();
+      form.append('projectId', project.id);
+      form.append('kind', 'submission');
+      form.append('file', val);
+      const res = await fetch(`${API_BASE}/api/media/upload`, { method: 'POST', body: form });
+      const data = await res.json();
+      values[elId] = data.mediaId ? { mediaId: data.mediaId, filename: val.name } : null;
+    }
+  }
+
+  const res = await fetch(`${API_BASE}/api/public/${getSlug()}/submit`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(values),
+  });
+  if(!res.ok){
+    alert('Something went wrong submitting the form. Please try again.');
+    return;
+  }
+
+  const wa = project.config.whatsapp;
+  if(wa && wa.enabled && wa.number){
+    const message = buildWhatsAppMessage(wa.messageTemplate || '');
+    const waUrl = `https://wa.me/${wa.number}?text=${encodeURIComponent(message)}`;
+    window.open(waUrl, '_blank', 'noopener');
+  }
+
+  document.getElementById('app').innerHTML = '<div class="card"><div class="top-bar"></div><div class="card-body"><h1 class="el-heading">Thanks — you\'re all set!</h1><p class="el-paragraph">Your response has been recorded.</p></div></div>';
+}
+
+function buildWhatsAppMessage(template){
+  const byKey = {};
+  project.config.pages.forEach(page => page.elements.forEach(el=>{
+    const key = el.props && el.props.prefillKey;
+    if(key && values[el.id] !== undefined) byKey[key] = values[el.id];
+  }));
+  return template.replace(/{{\s*(\w+)\s*}}/g, (_, key) => (byKey[key] !== undefined ? byKey[key] : ''));
+}
+
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+init();
+</script>
+</body>
+</html>
