@@ -93,6 +93,7 @@ const ELEMENT_TYPES = [
   ['text_input','Text Input'], ['textarea','Long Text'], ['dropdown','Dropdown'],
   ['checkbox','Checkboxes'], ['radio','Multiple Choice'], ['date','Date'],
   ['number','Number'], ['email','Email'], ['file_upload','File Upload'], ['gallery','Image Gallery'],
+  ['pricing_calculator','Pricing Calculator'], ['payment_method','Payment Method'],
 ];
 
 let state = {
@@ -259,6 +260,7 @@ function renderEditor(){
       <div style="display:flex;gap:8px;">
         <button class="btn outline" onclick="openPreview()">Preview</button>
         <button class="btn outline" onclick="openPrefillBuilder()">Prefilled Link</button>
+        <button class="btn outline" onclick="downloadFormFile()">Download form</button>
         ${p.published
           ? `<button class="btn outline" onclick="unpublish()">Unpublish</button>`
           : `<button class="btn" onclick="publish()">Publish</button>`}
@@ -296,6 +298,109 @@ async function unpublish(){
   render();
 }
 
+// Walks a project's config and returns every media id it references
+// (theme logo/banner, image/gallery elements, payment QR codes) so the
+// download step can inline each one — nothing here is type-specific
+// beyond knowing where a mediaId can live in the schema.
+function collectMediaIds(config){
+  const ids = new Set();
+  const theme = config.theme || {};
+  if(theme.logoMediaId) ids.add(theme.logoMediaId);
+  if(theme.bannerMediaId) ids.add(theme.bannerMediaId);
+  (config.pages||[]).forEach(pg => (pg.elements||[]).forEach(el=>{
+    const p = el.props || {};
+    if(el.type === 'image' && p.mediaId) ids.add(p.mediaId);
+    if(el.type === 'gallery') (p.images||[]).forEach(img=>{ if(img.mediaId) ids.add(img.mediaId); });
+    if(el.type === 'payment_method') (p.options||[]).forEach(o=>{ if(o.detail && o.detail.mediaId) ids.add(o.detail.mediaId); });
+  }));
+  return [...ids];
+}
+function blobToDataUri(blob){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// ---------------- download as a standalone, host-anywhere file ----------------
+// The renderer page is already a single self-contained .html file — one
+// <style> block, one <script> block, no relative asset paths, and every
+// API/font call already uses a full absolute URL. So embedding this
+// project's data into a copy of it produces a file with zero dependency
+// on where it's served from: double-click it locally, drop it into any
+// static host (Netlify, Vercel, GitHub Pages, S3, a plain Apache/Nginx
+// folder, even email it as an attachment) and it renders identically.
+// Images (logo, banner, gallery, payment QR codes) are additionally
+// inlined as base64 data URIs, so the file keeps showing them even after
+// the project's media is deleted from the server — only two things stay
+// server-dependent: new visitor form submissions (POSTed to your Worker
+// API) and the WhatsApp fallback, both of which need the visitor to be
+// online but don't care what domain is hosting the file itself.
+async function downloadFormFile(){
+  const proj = state.currentProject;
+  let html;
+  try{
+    const res = await fetch(`${PUBLIC_RENDERER_BASE}/index.html`, {cache:'no-store'});
+    if(!res.ok) throw new Error('renderer fetch failed');
+    html = await res.text();
+  }catch(e){
+    alert("Couldn't fetch the deployed renderer page to build the download. Make sure the public renderer is deployed and reachable at " + PUBLIC_RENDERER_BASE + "/index.html, then try again.");
+    return;
+  }
+
+  const mediaIds = collectMediaIds(proj.config);
+  const embeddedMedia = {};
+  if(mediaIds.length){
+    await Promise.all(mediaIds.map(async id=>{
+      try{
+        const r = await fetch(`${API_BASE}/api/media/${id}/file`);
+        if(!r.ok) return;
+        const blob = await r.blob();
+        embeddedMedia[id] = await blobToDataUri(blob);
+      }catch(e){ /* leave this one to fall back to the live URL */ }
+    }));
+  }
+
+  const embed = { id: proj.id, slug: proj.slug, name: proj.name, config: proj.config };
+  const injectTag =
+    '<script>window.__EMBEDDED_PROJECT__ = ' + JSON.stringify(embed) + ';' +
+    'window.__EMBEDDED_MEDIA__ = ' + JSON.stringify(embeddedMedia) + ';<' + '/script>\n';
+  html = html.includes('<head>') ? html.replace('<head>', '<head>\n' + injectTag) : injectTag + html;
+
+  const blob = new Blob([html], {type:'text/html'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${proj.slug || 'form'}.html`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+
+  const failedCount = mediaIds.length - Object.keys(embeddedMedia).length;
+  const mediaNote = mediaIds.length
+    ? (failedCount === 0
+        ? `All ${mediaIds.length} image(s) in this form were embedded directly into the file, so they'll keep showing even after you delete the project below.`
+        : `${Object.keys(embeddedMedia).length} of ${mediaIds.length} image(s) embedded successfully; ${failedCount} couldn't be fetched and will break if you delete the project below.`)
+    : '';
+
+  const remove = confirm(
+    "Downloaded — this file is fully self-contained and can be hosted anywhere " +
+    "(your own site, GitHub Pages, Netlify, a plain web host, or just opened directly).\n\n" +
+    (mediaNote ? mediaNote + '\n\n' : '') +
+    "Heads up: submissions to this dashboard and the WhatsApp handoff (if you use it) still need this project to exist on the server, so those stop working the moment you delete it below — the form itself keeps rendering regardless.\n\n" +
+    "To keep server storage light, this form's config, responses, and media can now be " +
+    "permanently removed from this dashboard. Delete it from the server now? This cannot be undone."
+  );
+  if(!remove) return;
+  try{
+    await api(`/api/projects/${proj.id}`, { method:'DELETE' });
+    alert('Removed from the server. Your downloaded file is unaffected.');
+    state.currentProject = null;
+    loadProjects();
+  }catch(e){
+    alert('Download succeeded, but deleting from the server failed: ' + e.message + '. Your project is untouched — you can try deleting it again from the dashboard.');
+  }
+}
+
 // ---------------- pages / elements tab ----------------
 
 function currentPage(){
@@ -315,8 +420,78 @@ function renderPagesTab(body){
     <div class="add-el-row">
       <select id="newElType">${ELEMENT_TYPES.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
       <button class="btn" onclick="addElement()">+ Add Element</button>
-    </div>`;
+    </div>
+    <div id="branchingBlock"></div>`;
   renderElementsList();
+  renderBranchingBlock();
+}
+
+// ---- generic page branching: "when the visitor picks X on THIS page,
+// send them to page Y next" — works for any radio/dropdown/payment_method
+// element, not just payment. Nothing about it is payment-specific. ----
+function branchableElements(page){
+  return page.elements.filter(el => ['radio','dropdown','payment_method'].includes(el.type));
+}
+function optionValuesFor(el){
+  if(el.type === 'payment_method') return (el.props.options||[]).map(o=>({value:o.id, label:o.label}));
+  return (el.props.options||[]).map(o=>({value:o, label:o}));
+}
+function renderBranchingBlock(){
+  const el = document.getElementById('branchingBlock');
+  if(!el) return;
+  const page = currentPage();
+  const candidates = branchableElements(page);
+  const pages = state.currentProject.config.pages.slice().sort((a,b)=>a.order-b.order);
+  const br = page.branching;
+
+  if(candidates.length === 0){
+    el.innerHTML = `<div class="settings-block"><h3>Branching</h3><p class="muted">Add a Multiple Choice, Dropdown, or Payment Method element to this page to route different pages depending on what the visitor picks.</p></div>`;
+    return;
+  }
+  const sourceEl = br ? candidates.find(c=>c.id===br.sourceElementId) : null;
+  el.innerHTML = `<div class="settings-block">
+    <h3>Branching</h3>
+    <p class="muted" style="margin-top:-6px;">Send the visitor to a different page next, depending on what they pick on THIS page. Leave "Off" for the normal in-order flow.</p>
+    <div class="field-row"><label>Branch based on</label>
+      <select onchange="setBranchSource(this.value)">
+        <option value="">Off — go to the next page in order</option>
+        ${candidates.map(c=>`<option value="${c.id}" ${br&&br.sourceElementId===c.id?'selected':''}>${escapeHtml(c.props.label||c.type)} (${c.id})</option>`).join('')}
+      </select>
+    </div>
+    ${sourceEl ? `
+      ${optionValuesFor(sourceEl).map(o=>`
+        <div class="field-row" style="display:flex;gap:8px;align-items:center;">
+          <span style="width:140px;font-size:13px;">${escapeHtml(o.label)} &rarr;</span>
+          <select style="flex:1;" onchange="setBranchMap('${escapeHtml(o.value)}', this.value)">
+            <option value="">(default)</option>
+            ${pages.filter(p=>p.id!==page.id).map(p=>`<option value="${p.id}" ${br&&br.map&&br.map[o.value]===p.id?'selected':''}>${escapeHtml(p.title)}</option>`).join('')}
+          </select>
+        </div>`).join('')}
+      <div class="field-row"><label>Default page (if the pick isn't listed above)</label>
+        <select onchange="setBranchDefault(this.value)">
+          <option value="">(next page in order)</option>
+          ${pages.filter(p=>p.id!==page.id).map(p=>`<option value="${p.id}" ${br&&br.default===p.id?'selected':''}>${escapeHtml(p.title)}</option>`).join('')}
+        </select>
+      </div>
+    ` : ''}
+  </div>`;
+}
+function setBranchSource(elId){
+  const page = currentPage();
+  if(!elId){ delete page.branching; saveProject(true); renderBranchingBlock(); return; }
+  page.branching = { sourceElementId: elId, map: {}, default: null };
+  saveProject(true); renderBranchingBlock();
+}
+function setBranchMap(optionValue, pageId){
+  const page = currentPage();
+  page.branching.map = page.branching.map || {};
+  if(pageId) page.branching.map[optionValue] = pageId; else delete page.branching.map[optionValue];
+  saveProject(true);
+}
+function setBranchDefault(pageId){
+  const page = currentPage();
+  page.branching.default = pageId || null;
+  saveProject(true);
 }
 
 function selectPage(id){ state.currentPageId = id; render(); }
@@ -332,7 +507,14 @@ async function addPage(){
 async function deletePage(){
   const cfg = state.currentProject.config;
   if(!confirm('Delete this page and all its elements?')) return;
-  cfg.pages = cfg.pages.filter(pg=>pg.id!==state.currentPageId).map((pg,i)=>({...pg, order:i}));
+  const removedId = state.currentPageId;
+  cfg.pages = cfg.pages.filter(pg=>pg.id!==removedId).map((pg,i)=>({...pg, order:i}));
+  // clear any branching that pointed at the page we just removed
+  cfg.pages.forEach(pg=>{
+    if(!pg.branching) return;
+    if(pg.branching.default === removedId) pg.branching.default = null;
+    if(pg.branching.map) Object.keys(pg.branching.map).forEach(k=>{ if(pg.branching.map[k]===removedId) delete pg.branching.map[k]; });
+  });
   state.currentPageId = cfg.pages[0].id;
   await saveProject(true); render();
 }
@@ -353,6 +535,7 @@ function renderElementsList(){
         <div style="display:flex;align-items:center;gap:8px;">
           <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
           <span class="el-type">${el.type.replace('_',' ')}</span>
+          <span class="muted" style="font-size:11px;" title="Element ID — use this in min/max Ref fields or page Branching">${el.id}</span>
         </div>
         <div class="el-actions">
           <button onclick="moveElement('${el.id}',-1)" ${i===0?'disabled':''} title="Move up">&uarr;</button>
@@ -423,6 +606,23 @@ function renderElementProps(el){
       return `<div class="field-row"><label>Label</label><input value="${escapeHtml(p.label)}" ${set('label')}></div>
               <div class="field-row opts-editor"><label>Options (one per line)</label><textarea onchange="updateElOptions('${el.id}', this.value)">${(p.options||[]).join('\n')}</textarea></div>
               ${requiredAndPrefillRow(el)}`;
+    case 'number':
+      return `<div class="field-row"><label>Label</label><input value="${escapeHtml(p.label)}" ${set('label')}></div>
+              <div class="field-row"><label>Placeholder</label><input value="${escapeHtml(p.placeholder)}" ${set('placeholder')}></div>
+              <div style="display:flex;gap:8px;">
+                <div class="field-row" style="flex:1;"><label>Min (number)</label><input type="number" value="${p.min??''}" oninput="updateElPropNum('${el.id}','min', this.value)"></div>
+                <div class="field-row" style="flex:1;"><label>Max (number)</label><input type="number" value="${p.max??''}" oninput="updateElPropNum('${el.id}','max', this.value)"></div>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <div class="field-row" style="flex:1;"><label>Min = value of element ID</label><input placeholder="e.g. el_participants" value="${escapeHtml(p.minRef||'')}" ${set('minRef')}></div>
+                <div class="field-row" style="flex:1;"><label>Max = value of element ID</label><input placeholder="e.g. el_participants" value="${escapeHtml(p.maxRef||'')}" ${set('maxRef')}></div>
+              </div>
+              <p class="muted" style="margin:-6px 0 10px;">A Ref field caps this number by whatever's currently entered in another element (e.g. "children" maxed by "participants"). Element IDs are shown at the top of each element card.</p>
+              ${requiredAndPrefillRow(el)}`;
+    case 'pricing_calculator':
+      return renderPricingCalcProps(el);
+    case 'payment_method':
+      return renderPaymentMethodProps(el);
     default:
       return `<div class="field-row"><label>Label</label><input value="${escapeHtml(p.label)}" ${set('label')}></div>
               <div class="field-row"><label>Placeholder</label><input value="${escapeHtml(p.placeholder)}" ${set('placeholder')}></div>
@@ -512,6 +712,234 @@ function updateElOptions(id, text){
   el.props.options = text.split('\n').map(s=>s.trim()).filter(Boolean);
   saveProject(true); renderElementsList();
 }
+function updateElPropNum(id, key, val){
+  const el = findElement(id);
+  el.props = el.props || {};
+  el.props[key] = val === '' ? null : Number(val);
+  saveProject(true);
+}
+function updateElPropPath(id, path, val, isNum){
+  // path like "participants.min" or "children.collectAges" — writes into a nested prop object
+  const el = findElement(id);
+  el.props = el.props || {};
+  const parts = path.split('.');
+  let obj = el.props;
+  for(let i=0;i<parts.length-1;i++){ obj[parts[i]] = obj[parts[i]] || {}; obj = obj[parts[i]]; }
+  const leaf = parts[parts.length-1];
+  obj[leaf] = isNum ? (val===''?null:Number(val)) : val;
+  saveProject(true);
+}
+
+// ---- pricing_calculator editor ----
+function renderPricingCalcProps(el){
+  const p = el.props || {};
+  const set = (key, val) => `oninput="updateElProp('${el.id}','${key}', this.value)"`;
+  const pkgs = p.packages || [];
+  const addons = p.addons || [];
+  return `
+    <div class="field-row"><label>Label</label><input value="${escapeHtml(p.label)}" ${set('label')}></div>
+    <div style="display:flex;gap:8px;">
+      <div class="field-row" style="flex:1;"><label>Currency symbol</label><input value="${escapeHtml(p.currencySymbol||'')}" ${set('currencySymbol')}></div>
+      <div class="field-row" style="flex:1;"><label>"Per unit" text</label><input value="${escapeHtml(p.perUnitLabel||'')}" ${set('perUnitLabel')}></div>
+    </div>
+    ${requiredAndPrefillRow(el)}
+
+    <h4 style="margin:12px 0 6px;font-size:13px;">Packages</h4>
+    ${pkgs.map((pkg,i)=>`
+      <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+        <input style="flex:2;" placeholder="Label" value="${escapeHtml(pkg.label)}" oninput="updatePcPackage('${el.id}',${i},'label',this.value)">
+        <input style="flex:1;" type="number" placeholder="Price" value="${pkg.price}" oninput="updatePcPackage('${el.id}',${i},'price',this.value)">
+        <button class="btn small danger" onclick="removePcPackage('${el.id}',${i})">&times;</button>
+      </div>`).join('')}
+    <button class="btn small outline" onclick="addPcPackage('${el.id}')">+ Add package</button>
+
+    <h4 style="margin:14px 0 6px;font-size:13px;">Participants (adults)</h4>
+    <div class="toggle-row"><label><input type="checkbox" ${p.participants&&p.participants.enabled?'checked':''} onchange="updateElPropPath('${el.id}','participants.enabled', this.checked)"> Enabled</label></div>
+    ${p.participants&&p.participants.enabled?`
+    <div style="display:flex;gap:8px;">
+      <div class="field-row" style="flex:2;"><label>Label</label><input value="${escapeHtml(p.participants.label||'')}" oninput="updateElPropPath('${el.id}','participants.label', this.value)"></div>
+      <div class="field-row" style="flex:1;"><label>Min</label><input type="number" value="${p.participants.min??1}" oninput="updateElPropPath('${el.id}','participants.min', this.value, true)"></div>
+      <div class="field-row" style="flex:1;"><label>Max</label><input type="number" value="${p.participants.max??50}" oninput="updateElPropPath('${el.id}','participants.max', this.value, true)"></div>
+    </div>`:''}
+
+    <h4 style="margin:14px 0 6px;font-size:13px;">Children</h4>
+    <div class="toggle-row"><label><input type="checkbox" ${p.children&&p.children.enabled?'checked':''} onchange="updateElPropPath('${el.id}','children.enabled', this.checked)"> Enabled</label></div>
+    ${p.children&&p.children.enabled?`
+    <div style="display:flex;gap:8px;">
+      <div class="field-row" style="flex:2;"><label>Label</label><input value="${escapeHtml(p.children.label||'')}" oninput="updateElPropPath('${el.id}','children.label', this.value)"></div>
+      <div class="field-row" style="flex:1;"><label>Min</label><input type="number" value="${p.children.min??0}" oninput="updateElPropPath('${el.id}','children.min', this.value, true)"></div>
+      <div class="field-row" style="flex:1;"><label>Max</label><input type="number" value="${p.children.max??50}" oninput="updateElPropPath('${el.id}','children.max', this.value, true)"></div>
+    </div>
+    <div class="field-row"><label>Child price rate (1 = full price, 0.5 = half, 0 = free)</label><input type="number" step="0.1" value="${p.children.priceMultiplier??1}" oninput="updateElPropPath('${el.id}','children.priceMultiplier', this.value, true)"></div>
+    <div class="toggle-row"><label><input type="checkbox" ${p.children.collectAges?'checked':''} onchange="updateElPropPath('${el.id}','children.collectAges', this.checked)"> Ask each child's age (needed for age-based add-on pricing)</label></div>
+    `:''}
+
+    <h4 style="margin:14px 0 6px;font-size:13px;">Add-ons</h4>
+    ${addons.map((a,i)=>renderPcAddonEditor(el.id,a,i)).join('')}
+    <div style="display:flex;gap:6px;">
+      <button class="btn small outline" onclick="addPcAddon('${el.id}','tiered_per_person')">+ Add tiered add-on (e.g. Home Stay)</button>
+      <button class="btn small outline" onclick="addPcAddon('${el.id}','flat_or_per_person')">+ Add flat/per-person add-on (e.g. Camping)</button>
+    </div>
+
+    <h4 style="margin:14px 0 6px;font-size:13px;">Discount</h4>
+    <div class="toggle-row"><label><input type="checkbox" ${p.discount&&p.discount.enabled?'checked':''} onchange="updateElPropPath('${el.id}','discount.enabled', this.checked)"> Enabled</label></div>
+    ${p.discount&&p.discount.enabled?`
+    <div style="display:flex;gap:8px;">
+      <div class="field-row" style="flex:1;"><label>Type</label>
+        <select onchange="updateElPropPath('${el.id}','discount.type', this.value)">
+          <option value="percent" ${p.discount.type==='percent'?'selected':''}>Percent off</option>
+          <option value="flat" ${p.discount.type==='flat'?'selected':''}>Flat amount off</option>
+        </select>
+      </div>
+      <div class="field-row" style="flex:1;"><label>${p.discount.type==='flat'?'Amount off':'% off'}</label><input type="number" value="${p.discount.value??0}" oninput="updateElPropPath('${el.id}','discount.value', this.value, true)"></div>
+    </div>
+    <div class="field-row"><label>Coupon code (leave blank to apply automatically to everyone)</label><input value="${escapeHtml(p.discount.code||'')}" oninput="updateElPropPath('${el.id}','discount.code', this.value)"></div>
+    <div class="field-row"><label>Label shown on the total (optional — a sensible default is used if blank)</label><input value="${escapeHtml(p.discount.label||'')}" oninput="updateElPropPath('${el.id}','discount.label', this.value)"></div>
+    `:''}
+
+    <h4 style="margin:14px 0 6px;font-size:13px;">Total box text</h4>
+    <div class="field-row"><label>Total label</label><input value="${escapeHtml(p.totalLabel||'')}" ${set('totalLabel')}></div>
+    <div class="field-row"><label>Empty-state note (before a package is picked)</label><input value="${escapeHtml(p.emptyBreakdownNote||'')}" ${set('emptyBreakdownNote')}></div>
+    <div class="field-row"><label>Footer note</label><input value="${escapeHtml(p.footerNote||'')}" ${set('footerNote')}></div>
+  `;
+}
+function pcAddonList(elId){ return findElement(elId).props.addons; }
+function addPcPackage(elId){
+  const el = findElement(elId);
+  el.props.packages = el.props.packages || [];
+  el.props.packages.push({ id: uid('pkg_'), label:'New package', price:0 });
+  saveProject(true); renderElementsList();
+}
+function updatePcPackage(elId, idx, key, val){
+  const el = findElement(elId);
+  el.props.packages[idx][key] = key==='price' ? Number(val) : val;
+  saveProject(true);
+}
+function removePcPackage(elId, idx){
+  const el = findElement(elId);
+  el.props.packages.splice(idx,1);
+  saveProject(true); renderElementsList();
+}
+function addPcAddon(elId, kind){
+  const el = findElement(elId);
+  el.props.addons = el.props.addons || [];
+  const base = { id: uid('addon_'), title:'New add-on', note:'', kind };
+  if(kind==='tiered_per_person') Object.assign(base, { adultBasePrice:0, additionalAdultPrice:0, childPrice:0, childFreeAge:0 });
+  else Object.assign(base, { price:0, perPerson:true });
+  el.props.addons.push(base);
+  saveProject(true); renderElementsList();
+}
+function updatePcAddon(elId, idx, key, val, isNum){
+  const el = findElement(elId);
+  el.props.addons[idx][key] = isNum ? Number(val) : val;
+  saveProject(true);
+}
+function updatePcAddonBool(elId, idx, key, val){
+  const el = findElement(elId);
+  el.props.addons[idx][key] = val;
+  saveProject(true);
+}
+function removePcAddon(elId, idx){
+  const el = findElement(elId);
+  el.props.addons.splice(idx,1);
+  saveProject(true); renderElementsList();
+}
+function renderPcAddonEditor(elId, a, i){
+  if(a.kind === 'tiered_per_person'){
+    return `<div class="settings-block" style="padding:12px;">
+      <div style="display:flex;gap:6px;">
+        <input style="flex:2;" placeholder="Title" value="${escapeHtml(a.title)}" oninput="updatePcAddon('${elId}',${i},'title',this.value)">
+        <button class="btn small danger" onclick="removePcAddon('${elId}',${i})">&times;</button>
+      </div>
+      <input placeholder="Note (shown under the title)" value="${escapeHtml(a.note||'')}" oninput="updatePcAddon('${elId}',${i},'note',this.value)" style="width:100%;margin:6px 0;">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <label style="font-size:11px;flex:1;">1st adult price<input type="number" value="${a.adultBasePrice}" oninput="updatePcAddon('${elId}',${i},'adultBasePrice',this.value,true)"></label>
+        <label style="font-size:11px;flex:1;">Each extra adult<input type="number" value="${a.additionalAdultPrice}" oninput="updatePcAddon('${elId}',${i},'additionalAdultPrice',this.value,true)"></label>
+        <label style="font-size:11px;flex:1;">Child price<input type="number" value="${a.childPrice}" oninput="updatePcAddon('${elId}',${i},'childPrice',this.value,true)"></label>
+        <label style="font-size:11px;flex:1;">Child free at/under age<input type="number" value="${a.childFreeAge}" oninput="updatePcAddon('${elId}',${i},'childFreeAge',this.value,true)"></label>
+      </div>
+    </div>`;
+  }
+  return `<div class="settings-block" style="padding:12px;">
+    <div style="display:flex;gap:6px;">
+      <input style="flex:2;" placeholder="Title" value="${escapeHtml(a.title)}" oninput="updatePcAddon('${elId}',${i},'title',this.value)">
+      <button class="btn small danger" onclick="removePcAddon('${elId}',${i})">&times;</button>
+    </div>
+    <input placeholder="Note" value="${escapeHtml(a.note||'')}" oninput="updatePcAddon('${elId}',${i},'note',this.value)" style="width:100%;margin:6px 0;">
+    <div style="display:flex;gap:6px;align-items:center;">
+      <label style="font-size:11px;flex:1;">Price<input type="number" value="${a.price}" oninput="updatePcAddon('${elId}',${i},'price',this.value,true)"></label>
+      <label style="font-size:12px;"><input type="checkbox" ${a.perPerson?'checked':''} onchange="updatePcAddonBool('${elId}',${i},'perPerson',this.checked)"> Multiply by headcount</label>
+    </div>
+  </div>`;
+}
+
+// ---- payment_method editor ----
+function renderPaymentMethodProps(el){
+  const p = el.props || {};
+  const set = (key, val) => `oninput="updateElProp('${el.id}','${key}', this.value)"`;
+  const opts = p.options || [];
+  return `
+    <div class="field-row"><label>Label</label><input value="${escapeHtml(p.label)}" ${set('label')}></div>
+    <div class="toggle-row"><label><input type="checkbox" ${p.showInline!==false?'checked':''} onchange="updateElProp('${el.id}','showInline', this.checked)"> Show the chosen payment's details right on this page (uncheck to send each choice to its own page — see Branching below)</label></div>
+    ${requiredAndPrefillRow(el)}
+    <h4 style="margin:12px 0 6px;font-size:13px;">Payment options</h4>
+    ${opts.map((o,i)=>renderPmOptionEditor(el.id,o,i)).join('')}
+    <button class="btn small outline" onclick="addPmOption('${el.id}')">+ Add option</button>
+  `;
+}
+function renderPmOptionEditor(elId, o, i){
+  const d = o.detail || {};
+  const kindFields = d.kind==='upi'
+    ? `<input placeholder="Account name" value="${escapeHtml(d.accountName||'')}" oninput="updatePmDetail('${elId}',${i},'accountName',this.value)" style="width:100%;margin-top:4px;">
+       <input placeholder="UPI ID" value="${escapeHtml(d.upiId||'')}" oninput="updatePmDetail('${elId}',${i},'upiId',this.value)" style="width:100%;margin-top:4px;">`
+    : d.kind==='bank'
+    ? `<input placeholder="Bank name" value="${escapeHtml(d.bankName||'')}" oninput="updatePmDetail('${elId}',${i},'bankName',this.value)" style="width:100%;margin-top:4px;">
+       <input placeholder="Account number" value="${escapeHtml(d.account||'')}" oninput="updatePmDetail('${elId}',${i},'account',this.value)" style="width:100%;margin-top:4px;">
+       <input placeholder="IFSC" value="${escapeHtml(d.ifsc||'')}" oninput="updatePmDetail('${elId}',${i},'ifsc',this.value)" style="width:100%;margin-top:4px;">`
+    : d.kind==='qr'
+    ? `<input placeholder="QR image media ID (Media tab)" value="${escapeHtml(d.mediaId||'')}" oninput="updatePmDetail('${elId}',${i},'mediaId',this.value)" style="width:100%;margin-top:4px;">
+       <input placeholder="Note (e.g. 'scan and pay')" value="${escapeHtml(d.note||'')}" oninput="updatePmDetail('${elId}',${i},'note',this.value)" style="width:100%;margin-top:4px;">`
+    : `<textarea placeholder="Custom detail text" oninput="updatePmDetail('${elId}',${i},'text',this.value)" style="width:100%;margin-top:4px;">${escapeHtml(d.text||'')}</textarea>`;
+  return `<div class="settings-block" style="padding:12px;">
+    <div style="display:flex;gap:6px;">
+      <input style="flex:1;" placeholder="Option ID (e.g. upi)" value="${escapeHtml(o.id)}" oninput="updatePmOption('${elId}',${i},'id',this.value)">
+      <input style="flex:1;" placeholder="Label shown to visitors" value="${escapeHtml(o.label)}" oninput="updatePmOption('${elId}',${i},'label',this.value)">
+      <select onchange="updatePmDetailKind('${elId}',${i},this.value)">
+        ${['upi','bank','qr','custom'].map(k=>`<option value="${k}" ${d.kind===k?'selected':''}>${k}</option>`).join('')}
+      </select>
+      <button class="btn small danger" onclick="removePmOption('${elId}',${i})">&times;</button>
+    </div>
+    ${kindFields}
+    <p class="muted" style="margin:4px 0 0;">Option ID <b>${escapeHtml(o.id)}</b> — use this in the page's Branching setup to send this choice to its own page.</p>
+  </div>`;
+}
+function addPmOption(elId){
+  const el = findElement(elId);
+  el.props.options = el.props.options || [];
+  el.props.options.push({ id: uid('opt_'), label:'New option', detail:{ kind:'custom', text:'' } });
+  saveProject(true); renderElementsList();
+}
+function updatePmOption(elId, idx, key, val){
+  const el = findElement(elId);
+  el.props.options[idx][key] = val;
+  saveProject(true);
+}
+function updatePmDetail(elId, idx, key, val){
+  const el = findElement(elId);
+  el.props.options[idx].detail = el.props.options[idx].detail || {};
+  el.props.options[idx].detail[key] = val;
+  saveProject(true);
+}
+function updatePmDetailKind(elId, idx, kind){
+  const el = findElement(elId);
+  el.props.options[idx].detail = { kind };
+  saveProject(true); renderElementsList();
+}
+function removePmOption(elId, idx){
+  const el = findElement(elId);
+  el.props.options.splice(idx,1);
+  saveProject(true); renderElementsList();
+}
 function addElement(){
   const type = document.getElementById('newElType').value;
   const page = currentPage();
@@ -526,6 +954,25 @@ function defaultPropsFor(type){
   if(type==='image') return { mediaId:'', alt:'', caption:'' };
   if(['dropdown','checkbox','radio'].includes(type)) return { label:'Choose an option', options:['Option 1','Option 2'], required:false, prefillKey:'' };
   if(type==='gallery') return { images:[] };
+  if(type==='number') return { label:'Number', placeholder:'', required:false, prefillKey:'', min:null, max:null, minRef:'', maxRef:'' };
+  if(type==='pricing_calculator') return {
+    label:'Choose your package', required:true, prefillKey:'',
+    currencySymbol:'\u20B9', perUnitLabel:'per person',
+    packages:[{ id: uid('pkg_'), label:'Package 1', price:1000 }],
+    participants:{ enabled:true, label:'Number of participants', min:1, max:50, default:1 },
+    children:{ enabled:false, label:'Number of children', min:0, max:50, default:0, priceMultiplier:1, collectAges:false, label_age:'Child {n} age' },
+    addons:[],
+    discount:{ enabled:false, type:'percent', value:10, code:'', codePlaceholder:'Coupon code', label:'', successText:'Discount applied!', failText:"That code doesn't look right." },
+    totalLabel:'Estimated total', emptyBreakdownNote:'Select a package to see pricing', footerNote:''
+  };
+  if(type==='payment_method') return {
+    label:'Payment mode', required:true, prefillKey:'', showInline:true,
+    options:[
+      { id:'upi', label:'UPI ID', detail:{ kind:'upi', upiId:'', accountName:'' } },
+      { id:'bank', label:'Bank Transfer', detail:{ kind:'bank', bankName:'', account:'', ifsc:'' } },
+      { id:'qr', label:'QR Code', detail:{ kind:'qr', mediaId:'', note:'scan and pay' } }
+    ]
+  };
   return { label:'Label', placeholder:'', required:false, prefillKey:'' };
 }
 function moveElement(id, dir){
@@ -788,6 +1235,7 @@ let previewValues = {};
 function openPreview(){
   previewIndex = 0;
   previewValues = {};
+  previewHistory = [];
   const modal = document.createElement('div');
   modal.className = 'modal-bg';
   modal.id = 'previewModal';
@@ -805,8 +1253,8 @@ function renderPreviewContent(){
   const cfg = state.currentProject.config;
   const pages = cfg.pages.slice().sort((a,b)=>a.order-b.order);
   const page = pages[previewIndex];
-  const isFirst = previewIndex === 0;
-  const isLast = previewIndex === pages.length - 1;
+  const isFirst = previewHistory.length === 0;
+  const isLast = previewNextIndex() >= pages.length;
   const B = cfg.buttons || {};
   const frame = document.getElementById('previewFrame');
   if(!frame) return;
@@ -841,6 +1289,10 @@ function previewFieldHtml(el, cfg){
       return previewFieldWrap(el, (p.options||[]).map(o=>`<label class="opt-row" style="display:flex;gap:8px;align-items:center;font-size:14px;"><input type="radio" name="pvrd-${el.id}" value="${escapeHtml(o)}"> ${escapeHtml(o)}</label>`).join(''));
     case 'file_upload':
       return previewFieldWrap(el, `<p class="muted" style="margin:0;">File uploads aren't testable in preview — try it on the published link.</p>`);
+    case 'pricing_calculator':
+      return previewPricingCalcHtml(el, cfg);
+    case 'payment_method':
+      return previewPaymentMethodHtml(el, cfg);
     default:
       return previewFieldWrap(el, `<input class="answer" id="pv-${el.id}" type="${el.type==='text_input'?'text':el.type}" placeholder="${escapeHtml(p.placeholder||'')}" value="${escapeHtml(val||'')}" style="width:100%;padding:6px 0;border:none;border-bottom:1px solid var(--border);">`);
   }
@@ -853,6 +1305,57 @@ function previewFieldWrap(el, inner){
     <div class="err" style="display:none;color:var(--red);font-size:12px;margin-top:4px;">This field is required.</div>
   </div>`;
 }
+function previewPricingCalcHtml(el, cfg){
+  const p = el.props||{};
+  const val = previewValues[el.id] || { packageId:null, participants: (p.participants&&p.participants.default)||0, children:0 };
+  const cur = p.currencySymbol ?? '\u20B9';
+  const pkgRows = (p.packages||[]).map(pkg=>`<label class="opt-row" style="justify-content:space-between;">
+      <span><input type="radio" name="pvpc-${el.id}" value="${escapeHtml(pkg.id)}" ${val.packageId===pkg.id?'checked':''} onchange="previewPcPick('${el.id}','${escapeHtml(pkg.id)}',${pkg.price})"> ${escapeHtml(pkg.label)}</span>
+      <span class="muted">${cur}${pkg.price}</span>
+    </label>`).join('');
+  const total = val.packageId ? previewPcTotal(el) : 0;
+  return `<div class="field" id="pv-field-${el.id}" style="margin-bottom:18px;">
+    <div class="field-label" style="font-size:14px;margin-bottom:6px;">${escapeHtml(p.label||'')}${p.required?'<span style="color:var(--red);"> *</span>':''}</div>
+    ${pkgRows || '<p class="muted">No packages configured yet.</p>'}
+    <p class="muted" style="margin-top:8px;">Preview shows package selection only — steppers and add-ons behave the same way on the live link.</p>
+    ${val.packageId ? `<div class="pc-total-box" style="background:#F1F3F4;border-radius:6px;padding:10px 12px;margin-top:6px;font-weight:600;">${escapeHtml(p.totalLabel||'Estimated total')}: ${cur}${total}</div>` : ''}
+    <div class="err" style="display:none;color:var(--red);font-size:12px;margin-top:4px;">Please select a package.</div>
+  </div>`;
+}
+function previewPcPick(elId, pkgId, price){
+  previewValues[elId] = { packageId: pkgId, price };
+  renderPreviewContent();
+}
+function previewPcTotal(el){
+  const val = previewValues[el.id];
+  const pkg = (el.props.packages||[]).find(p=>p.id===val.packageId);
+  return pkg ? pkg.price : 0;
+}
+function previewPaymentMethodHtml(el, cfg){
+  const p = el.props||{};
+  const chosen = previewValues[el.id];
+  const rows = (p.options||[]).map(o=>`<label class="opt-row"><input type="radio" name="pvpm-${el.id}" value="${escapeHtml(o.id)}" ${chosen===o.id?'checked':''} onchange="previewPmPick('${el.id}','${escapeHtml(o.id)}')"> ${escapeHtml(o.label)}</label>`).join('');
+  let detail = '';
+  if(chosen){
+    const opt = (p.options||[]).find(o=>o.id===chosen);
+    const d = (opt&&opt.detail)||{};
+    if(d.kind==='upi') detail = `<div class="muted">UPI: ${escapeHtml(d.upiId||'')}</div>`;
+    else if(d.kind==='bank') detail = `<div class="muted">${escapeHtml(d.bankName||'')} · ${escapeHtml(d.account||'')} · ${escapeHtml(d.ifsc||'')}</div>`;
+    else if(d.kind==='qr') detail = `<div class="muted">${escapeHtml(d.note||'QR code')}</div>`;
+    else if(d.kind==='custom') detail = `<div class="muted">${escapeHtml(d.text||'')}</div>`;
+  }
+  return `<div class="field" id="pv-field-${el.id}" style="margin-bottom:18px;">
+    <div class="field-label" style="font-size:14px;margin-bottom:6px;">${escapeHtml(p.label||'')}${p.required?'<span style="color:var(--red);"> *</span>':''}</div>
+    ${rows}
+    ${p.showInline!==false && detail ? `<div style="background:#F1F3F4;border-radius:6px;padding:10px 12px;margin-top:8px;">${detail}</div>` : ''}
+    <div class="err" style="display:none;color:var(--red);font-size:12px;margin-top:4px;">Please select a payment mode.</div>
+  </div>`;
+}
+function previewPmPick(elId, optId){
+  previewValues[elId] = optId;
+  renderPreviewContent();
+}
+
 function previewCollectAndValidate(){
   const cfg = state.currentProject.config;
   const pages = cfg.pages.slice().sort((a,b)=>a.order-b.order);
@@ -865,6 +1368,8 @@ function previewCollectAndValidate(){
     let val;
     if(el.type==='checkbox') val = [...document.querySelectorAll(`input[name="pvcb-${el.id}"]:checked`)].map(i=>i.value);
     else if(el.type==='radio'){ const c=document.querySelector(`input[name="pvrd-${el.id}"]:checked`); val = c?c.value:''; }
+    else if(el.type==='pricing_calculator'){ val = previewValues[el.id]&&previewValues[el.id].packageId ? previewValues[el.id].packageId : ''; }
+    else if(el.type==='payment_method'){ val = previewValues[el.id] || ''; }
     else { const i=document.getElementById(`pv-${el.id}`); val = i?i.value.trim():''; }
     const empty = val==='' || val==null || (Array.isArray(val)&&val.length===0);
     const errEl = fieldEl.querySelector('.err');
@@ -875,18 +1380,34 @@ function previewCollectAndValidate(){
     } else {
       fieldEl.style.outline = 'none';
       if(errEl) errEl.style.display = 'none';
-      previewValues[el.id] = val;
+      if(el.type!=='pricing_calculator') previewValues[el.id] = val;
     }
   });
   return ok;
 }
+
+let previewHistory = [];
+function previewNextIndex(){
+  const cfg = state.currentProject.config;
+  const pages = cfg.pages.slice().sort((a,b)=>a.order-b.order);
+  const page = pages[previewIndex];
+  const br = page.branching;
+  if(br && br.sourceElementId){
+    const v = previewValues[br.sourceElementId];
+    const mapped = v!=null && br.map && Object.prototype.hasOwnProperty.call(br.map, v) ? br.map[v] : null;
+    const target = mapped || br.default;
+    if(target){ const idx = pages.findIndex(p=>p.id===target); if(idx!==-1) return idx; }
+  }
+  return previewIndex+1;
+}
 function previewGoNext(){
   if(!previewCollectAndValidate()) return;
-  previewIndex++;
+  previewHistory.push(previewIndex);
+  previewIndex = previewNextIndex();
   renderPreviewContent();
 }
 function previewGoBack(){
-  previewIndex--;
+  previewIndex = previewHistory.length ? previewHistory.pop() : Math.max(0, previewIndex-1);
   renderPreviewContent();
 }
 
