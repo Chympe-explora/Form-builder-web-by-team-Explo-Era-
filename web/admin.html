@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Master Admin — Form Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{ --primary:#4B39D6; --bg:#F5F6FA; --text:#1F1F1F; --gray:#5F6368; --border:#DADCE0; --red:#D93025; --green:#188038; }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Roboto',Arial,sans-serif;min-height:100vh;}
+  .hidden{display:none !important;}
+  a{color:var(--primary);}
+
+  .topbar{background:#1F1F2E;color:#fff;border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;justify-content:space-between;}
+  .topbar .brand{font-weight:700;font-size:16px;}
+  .topbar .brand .tag{background:var(--primary);font-size:11px;padding:2px 8px;border-radius:10px;margin-left:8px;vertical-align:2px;}
+  .topbar button{background:none;border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:4px;padding:6px 12px;cursor:pointer;font-size:13px;}
+  .shell{display:flex;min-height:calc(100vh - 49px);}
+  .sidenav{width:190px;flex-shrink:0;background:#fff;border-right:1px solid var(--border);padding:14px 0;}
+  .sidenav button{display:block;width:100%;text-align:left;background:none;border:none;padding:10px 18px;font-size:14px;cursor:pointer;color:var(--gray);}
+  .sidenav button.active{color:var(--primary);font-weight:500;background:#EEEDFB;border-right:3px solid var(--primary);}
+  .container{flex:1;max-width:1080px;margin:0 auto;padding:20px 20px 80px;width:100%;}
+
+  .auth-card{max-width:360px;margin:60px auto;background:#fff;border-radius:8px;padding:28px;box-shadow:0 1px 3px rgba(0,0,0,.1);}
+  .auth-card h1{font-size:20px;margin:0 0 4px;}
+  .field-row{margin-bottom:14px;}
+  .field-row label{display:block;font-size:13px;color:var(--gray);margin-bottom:4px;}
+  .field-row input,.field-row select{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:4px;font-size:14px;font-family:inherit;}
+  .btn{background:var(--primary);color:#fff;border:none;border-radius:4px;padding:9px 18px;font-size:14px;font-weight:500;cursor:pointer;}
+  .btn:hover{filter:brightness(0.93);}
+  .btn.outline{background:#fff;color:var(--primary);border:1px solid var(--primary);}
+  .btn.danger{background:var(--red);}
+  .btn.small{padding:5px 10px;font-size:12px;}
+  .link-btn{background:none;border:none;color:var(--primary);cursor:pointer;font-size:13px;padding:0;}
+  .error-msg{color:var(--red);font-size:13px;margin-top:8px;}
+  .muted{color:var(--gray);font-size:13px;}
+
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:22px;}
+  .stat-card{background:#fff;border-radius:8px;padding:16px 18px;box-shadow:0 1px 2px rgba(0,0,0,.08);}
+  .stat-card .num{font-size:24px;font-weight:700;}
+  .stat-card .lbl{font-size:12px;color:var(--gray);margin-top:2px;}
+
+  .card{background:#fff;border-radius:8px;padding:16px 18px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.08);}
+  table.admin-table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;}
+  table.admin-table th,table.admin-table td{padding:10px 12px;font-size:13px;text-align:left;border-bottom:1px solid #F1F3F4;}
+  table.admin-table th{color:var(--gray);font-weight:500;font-size:12px;text-transform:uppercase;}
+  table.admin-table tr:hover td{background:#FAFAFD;}
+  .pill{font-size:11px;padding:2px 8px;border-radius:10px;background:#E8EAED;color:var(--gray);}
+  .pill.live{background:#E6F4EA;color:var(--green);}
+  .pill.off{background:#FCE8E6;color:var(--red);}
+  .pill.authority{background:#FFF3CD;color:#8A6D00;}
+  .search-row{display:flex;gap:8px;margin-bottom:12px;}
+  .search-row input{flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:14px;}
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid #F1F3F4;font-size:13px;}
+  .toggle-row:first-child{border-top:none;}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:50;}
+  .modal-box{background:#fff;border-radius:8px;max-width:560px;width:92%;max-height:85vh;overflow:auto;padding:20px;}
+  .row-actions{display:flex;gap:6px;flex-wrap:wrap;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">Form &amp; Website Builder <span class="tag">MASTER ADMIN</span></div>
+  <button id="logoutBtn" class="hidden" onclick="logout()">Log out</button>
+</div>
+<div class="shell">
+  <div class="sidenav hidden" id="sidenav"></div>
+  <div class="container" id="app"></div>
+</div>
+
+<script>window.FORM_BUILDER_API_BASE = 'https://form-builder-api.senlysuchiang87.workers.dev';</script>
+<script>
+// Same convention as the customer app's index.html — see API_BASE there.
+const API_BASE = window.FORM_BUILDER_API_BASE || 'https://form-builder-api.YOUR_SUBDOMAIN.workers.dev';
+
+const PLAN_LABELS = { basic: 'Basic (3 forms)', single: 'Single Form', professional: 'Professional (10 forms)' };
+
+let state = {
+  token: localStorage.getItem('fba_token') || null,
+  user: JSON.parse(localStorage.getItem('fba_user') || 'null'),
+  isOwnerAdmin: JSON.parse(localStorage.getItem('fba_isOwnerAdmin') || 'false'),
+  // 'all' (full owner) or an array of permission keys (delegated admin).
+  permissions: JSON.parse(localStorage.getItem('fba_permissions') || '"all"'),
+  view: 'dashboard', // 'dashboard' | 'customers' | 'payments' | 'audit' | 'websites' | 'telegram' | 'delegated' | 'settings'
+  stats: null,
+  users: null,
+  usersSearch: '',
+  payments: null,
+  paymentsStatus: 'pending',
+  auditEntries: null,
+  activeCustomer: null, // full detail from /api/admin/customer/:id, shown in a modal
+  projects: null,
+  projectsSearch: '',
+  telegramDests: null,
+  delegates: null,
+  planData: null, // { plans, defaults, overrides } from /api/admin/plans
+  settings: null,
+};
+
+// Full owners can do everything; delegated admins are limited to their
+// granted permission list. Every check here is UX-only — the backend
+// re-verifies with requirePermission() on every call regardless.
+function can(permission){ return state.permissions === 'all' || (Array.isArray(state.permissions) && state.permissions.includes(permission)); }
+
+function escapeHtml(str){ return String(str==null?'':str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtDate(iso){ if(!iso) return '—'; try{ return new Date(iso).toLocaleDateString(); }catch(e){ return iso; } }
+function fmtMoney(n){ return '₹' + Number(n||0).toLocaleString('en-IN'); }
+
+// Same shape as the customer app's api() helper — same backend, same JWT
+// auth convention. A different localStorage key (fba_* vs fb_*) so an
+// admin can be logged into both apps in the same browser at once.
+function api(path, opts = {}){
+  opts.headers = Object.assign({}, opts.headers, state.token ? {Authorization:'Bearer '+state.token} : {});
+  if(opts.body && !(opts.body instanceof FormData)){
+    opts.headers['Content-Type'] = 'application/json';
+  }
+  return fetch(API_BASE+path, opts).then(async r=>{
+    const data = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(data.error || 'Request failed');
+    return data;
+  });
+}
+
+function render(){
+  document.getElementById('logoutBtn').classList.toggle('hidden', !state.token);
+  document.getElementById('sidenav').classList.toggle('hidden', !state.token);
+  if(!state.token) return renderAuth();
+  renderSidenav();
+  if(state.view === 'customers') return renderCustomers();
+  if(state.view === 'payments') return renderPayments();
+  if(state.view === 'audit') return renderAudit();
+  if(state.view === 'websites') return renderWebsites();
+  if(state.view === 'telegram') return renderTelegramAdmin();
+  if(state.view === 'delegated') return renderDelegated();
+  if(state.view === 'settings') return renderSettings();
+  return renderDashboard();
+}
+
+// ---------------- auth ----------------
+
+function renderAuth(){
+  document.getElementById('app').innerHTML = `
+    <div class="auth-card">
+      <h1>Master Admin</h1>
+      <p class="muted" style="margin:0 0 16px;">Private platform-owner login — not for customer accounts.</p>
+      <div class="field-row"><label>Email</label><input id="authEmail" type="email"></div>
+      <div class="field-row"><label>Password</label><input id="authPassword" type="password"></div>
+      <button class="btn" style="width:100%" onclick="doAuth()">Log in</button>
+      <div class="error-msg hidden" id="authError"></div>
+    </div>`;
+}
+
+async function doAuth(){
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const errBox = document.getElementById('authError');
+  errBox.classList.add('hidden');
+  try{
+    const data = await api('/api/auth/login', { method:'POST', body: JSON.stringify({email,password}) });
+    // The Worker only ever sets isAdmin:true for is_admin=1 accounts —
+    // regular customers (even Admin Authority accounts) get isAdmin:false
+    // or no field at all. This is the sole gate for this dashboard; every
+    // /api/admin/* route re-checks is_admin server-side regardless.
+    if(!data.isAdmin){
+      errBox.textContent = 'This account does not have Master Admin access.';
+      errBox.classList.remove('hidden');
+      return;
+    }
+    state.token = data.token; state.user = data.user;
+    state.isOwnerAdmin = !!data.isOwnerAdmin;
+    state.permissions = data.adminPermissions || 'all';
+    localStorage.setItem('fba_token', data.token);
+    localStorage.setItem('fba_user', JSON.stringify(data.user));
+    localStorage.setItem('fba_isOwnerAdmin', JSON.stringify(state.isOwnerAdmin));
+    localStorage.setItem('fba_permissions', JSON.stringify(state.permissions));
+    state.view = 'dashboard';
+    render();
+    loadDashboard();
+  }catch(e){
+    errBox.textContent = e.message; errBox.classList.remove('hidden');
+  }
+}
+function logout(){
+  state.token = null; state.user = null; state.isOwnerAdmin = false; state.permissions = 'all';
+  localStorage.removeItem('fba_token'); localStorage.removeItem('fba_user');
+  localStorage.removeItem('fba_isOwnerAdmin'); localStorage.removeItem('fba_permissions');
+  render();
+}
+
+// ---------------- sidenav ----------------
+
+function renderSidenav(){
+  // Every item here is also independently enforced server-side by
+  // requirePermission() — hiding it is just so a delegated admin isn't
+  // shown buttons that would 403.
+  const items = [
+    ['dashboard','Dashboard', 'view_analytics'],
+    ['customers','Customers', 'manage_customers'],
+    ['websites','Websites & Forms', 'manage_websites'],
+    ['telegram','Telegram', 'manage_telegram'],
+    ['payments','Payments', 'manage_payments'],
+    ['delegated','Delegated Admins', null], // full-owner-only, see below
+    ['settings','Platform Settings', 'manage_platform_settings'],
+    ['audit','Audit Log', null], // full-owner-only, see below
+  ];
+  document.getElementById('sidenav').innerHTML = items
+    .filter(([,,perm]) => perm ? can(perm) : state.isOwnerAdmin)
+    .map(([key,label]) => `<button class="${state.view===key?'active':''}" onclick="switchView('${key}')">${label}</button>`)
+    .join('');
+}
+function switchView(view){
+  state.view = view;
+  render();
+  if(view === 'dashboard') loadDashboard();
+  if(view === 'customers') loadUsers();
+  if(view === 'payments') loadPayments();
+  if(view === 'audit') loadAudit();
+  if(view === 'websites') loadWebsites();
+  if(view === 'telegram') loadTelegramAdmin();
+  if(view === 'delegated') loadDelegated();
+  if(view === 'settings') loadSettings();
+}
+
+// ---------------- dashboard ----------------
+
+async function loadDashboard(){
+  try{
+    state.stats = await api('/api/admin/stats');
+  }catch(e){
+    state.stats = { error: e.message };
+  }
+  if(state.view === 'dashboard') renderDashboard();
+}
+function renderDashboard(){
+  const app = document.getElementById('app');
+  if(!state.stats){
+    app.innerHTML = '<p class="muted">Loading…</p>';
+    return;
+  }
+  if(state.stats.error){
+    app.innerHTML = `<div class="error-msg">${escapeHtml(state.stats.error)}</div>`;
+    return;
+  }
+  const s = state.stats;
+  const planRows = (s.revenue.byPlan||[]).map(p => `
+    <tr><td>${escapeHtml(PLAN_LABELS[p.plan] || p.plan)}</td><td>${p.customers}</td><td>${fmtMoney(p.revenue)}</td></tr>
+  `).join('');
+  app.innerHTML = `
+    <h2 style="margin-top:0;">Platform overview</h2>
+    <div class="stat-grid">
+      <div class="stat-card"><div class="num">${s.customers.total}</div><div class="lbl">Total customers</div></div>
+      <div class="stat-card"><div class="num">${s.customers.active}</div><div class="lbl">Active subscriptions</div></div>
+      <div class="stat-card"><div class="num">${s.customers.expired}</div><div class="lbl">Expired / inactive</div></div>
+      <div class="stat-card"><div class="num">${s.customers.new30d}</div><div class="lbl">New (30 days)</div></div>
+      <div class="stat-card"><div class="num">${s.websites.total}</div><div class="lbl">Websites / forms</div></div>
+      <div class="stat-card"><div class="num">${s.websites.published}</div><div class="lbl">Published</div></div>
+      <div class="stat-card"><div class="num">${s.submissions}</div><div class="lbl">Submissions</div></div>
+      <div class="stat-card"><div class="num">${s.bookings}</div><div class="lbl">Bookings</div></div>
+      <div class="stat-card"><div class="num">${s.telegramConnectedAccounts}</div><div class="lbl">Telegram-connected</div></div>
+      <div class="stat-card"><div class="num">${fmtMoney(s.revenue.total)}</div><div class="lbl">Total revenue (approved)</div></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">Revenue by plan</h3>
+      <table class="admin-table">
+        <tr><th>Plan</th><th>Customers</th><th>Revenue</th></tr>
+        ${planRows || '<tr><td colspan="3" class="muted">No data yet.</td></tr>'}
+      </table>
+    </div>`;
+}
+
+// ---------------- customers ----------------
+
+async function loadUsers(){
+  try{
+    const data = await api('/api/admin/users');
+    state.users = data.users;
+  }catch(e){
+    state.users = { error: e.message };
+  }
+  if(state.view === 'customers') renderCustomers();
+}
+function renderCustomers(){
+  const app = document.getElementById('app');
+  if(!state.users){ app.innerHTML = '<p class="muted">Loading…</p>'; return; }
+  if(state.users.error){ app.innerHTML = `<div class="error-msg">${escapeHtml(state.users.error)}</div>`; return; }
+  const q = state.usersSearch.trim().toLowerCase();
+  const rows = state.users.filter(u => !q || u.email.toLowerCase().includes(q)).map(u => `
+    <tr>
+      <td>${escapeHtml(u.email)}</td>
+      <td>${escapeHtml(PLAN_LABELS[u.plan] || u.plan)}</td>
+      <td>${u.max_forms === null ? 'Unlimited' : u.max_forms}</td>
+      <td><span class="pill ${u.subscription_active ? 'live':'off'}">${u.subscription_active ? 'Active':'Inactive'}</span>
+          ${u.authority_enabled ? '<span class="pill authority">Authority</span>' : ''}</td>
+      <td>${fmtDate(u.created_at)}</td>
+      <td class="row-actions">
+        <button class="btn small outline" onclick="openCustomer('${u.id}')">View</button>
+      </td>
+    </tr>`).join('');
+  app.innerHTML = `
+    <h2 style="margin-top:0;">Customers</h2>
+    <div class="search-row">
+      <input id="userSearch" placeholder="Search by email…" value="${escapeHtml(state.usersSearch)}" oninput="state.usersSearch=this.value; renderCustomers();">
+    </div>
+    <table class="admin-table">
+      <tr><th>Email</th><th>Plan</th><th>Form limit</th><th>Status</th><th>Joined</th><th></th></tr>
+      ${rows || '<tr><td colspan="6" class="muted">No customers found.</td></tr>'}
+    </table>`;
+}
+
+async function openCustomer(id){
+  state.activeCustomer = { loading: true };
+  renderCustomerModal();
+  try{
+    state.activeCustomer = await api('/api/admin/customer/' + id);
+  }catch(e){
+    state.activeCustomer = { error: e.message };
+  }
+  renderCustomerModal();
+}
+function closeCustomerModal(){
+  state.activeCustomer = null;
+  const el = document.getElementById('customerModalBg');
+  if(el) el.remove();
+}
+function renderCustomerModal(){
+  let bg = document.getElementById('customerModalBg');
+  if(!bg){
+    bg = document.createElement('div');
+    bg.id = 'customerModalBg';
+    bg.className = 'modal-bg';
+    bg.onclick = (e) => { if(e.target === bg) closeCustomerModal(); };
+    document.body.appendChild(bg);
+  }
+  const c = state.activeCustomer;
+  if(!c){ bg.remove(); return; }
+  if(c.loading){ bg.innerHTML = '<div class="modal-box"><p class="muted">Loading…</p></div>'; return; }
+  if(c.error){ bg.innerHTML = `<div class="modal-box"><div class="error-msg">${escapeHtml(c.error)}</div></div>`; return; }
+  const u = c.user;
+  const projectRows = (c.projects||[]).map(p => `
+    <tr><td>${escapeHtml(p.name)}</td><td><span class="pill ${p.published?'live':''}">${p.published?'Published':'Draft'}</span></td><td>${fmtDate(p.updated_at)}</td></tr>
+  `).join('') || '<tr><td colspan="3" class="muted">No websites yet.</td></tr>';
+  const paymentRows = (c.payments||[]).map(p => `
+    <tr><td>${escapeHtml(p.kind)}</td><td>${fmtMoney(p.amount)}</td><td>${escapeHtml(p.status)}</td><td>${fmtDate(p.created_at)}</td></tr>
+  `).join('') || '<tr><td colspan="4" class="muted">No payments yet.</td></tr>';
+
+  bg.innerHTML = `
+    <div class="modal-box">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div>
+          <h3 style="margin:0;">${escapeHtml(u.email)}</h3>
+          <p class="muted" style="margin:2px 0 0;">${escapeHtml(PLAN_LABELS[u.plan] || u.plan)} · Joined ${fmtDate(u.created_at)}</p>
+        </div>
+        <button class="link-btn" onclick="closeCustomerModal()">Close</button>
+      </div>
+
+      <div class="toggle-row">
+        <span>Subscription</span>
+        <span>
+          <span class="pill ${u.subscription_active?'live':'off'}" style="margin-right:8px;">${u.subscription_active?'Active':'Inactive'}</span>
+          <button class="btn small ${u.subscription_active?'danger':''}" onclick="toggleSubscription('${u.email}', ${u.subscription_active ? 'false':'true'})">${u.subscription_active?'Deactivate':'Activate'}</button>
+        </span>
+      </div>
+      <div class="toggle-row">
+        <span>Admin Authority override</span>
+        <span>
+          <span class="pill ${u.authority_enabled?'authority':''}" style="margin-right:8px;">${u.authority_enabled?'Enabled':'Off'}</span>
+          <button class="btn small outline" onclick="toggleAuthority('${u.email}', ${u.authority_enabled ? 'false':'true'})">${u.authority_enabled?'Revoke':'Grant unlimited'}</button>
+        </span>
+      </div>
+      <div class="toggle-row"><span>Renewal due</span><span>${fmtDate(u.subscription_due_at)}</span></div>
+      <div class="toggle-row"><span>CRM contacts</span><span>${c.crmCustomerCount || 0}</span></div>
+
+      <h4 style="margin:16px 0 6px;">Websites / forms</h4>
+      <table class="admin-table"><tr><th>Name</th><th>Status</th><th>Updated</th></tr>${projectRows}</table>
+
+      <h4 style="margin:16px 0 6px;">Payment history</h4>
+      <table class="admin-table"><tr><th>Kind</th><th>Amount</th><th>Status</th><th>Date</th></tr>${paymentRows}</table>
+    </div>`;
+}
+
+async function toggleSubscription(email, active){
+  try{
+    await api('/api/admin/subscription-toggle', { method:'POST', body: JSON.stringify({ email, active, extendDays: 30 }) });
+    await Promise.all([loadUsers(), openCustomer(state.activeCustomer.user.id)]);
+  }catch(e){ alert(e.message); }
+}
+async function toggleAuthority(email, enabled){
+  try{
+    await api('/api/admin/authority', { method:'POST', body: JSON.stringify({ email, enabled }) });
+    await Promise.all([loadUsers(), openCustomer(state.activeCustomer.user.id)]);
+  }catch(e){ alert(e.message); }
+}
+
+// ---------------- payments ----------------
+
+async function loadPayments(){
+  try{
+    const data = await api('/api/admin/payments?status=' + encodeURIComponent(state.paymentsStatus));
+    state.payments = data.payments;
+  }catch(e){
+    state.payments = { error: e.message };
+  }
+  if(state.view === 'payments') renderPayments();
+}
+function renderPayments(){
+  const app = document.getElementById('app');
+  if(!state.payments){ app.innerHTML = '<p class="muted">Loading…</p>'; return; }
+  if(state.payments.error){ app.innerHTML = `<div class="error-msg">${escapeHtml(state.payments.error)}</div>`; return; }
+  const rows = state.payments.map(p => `
+    <tr>
+      <td>${escapeHtml(p.email)}</td>
+      <td>${escapeHtml(PLAN_LABELS[p.plan] || p.plan)}</td>
+      <td>${escapeHtml(p.kind)}</td>
+      <td>${fmtMoney(p.amount)}</td>
+      <td>${fmtDate(p.created_at)}</td>
+      <td class="row-actions">
+        ${state.paymentsStatus === 'pending' ? `
+          <button class="btn small" onclick="resolvePayment('${p.id}','approve')">Approve</button>
+          <button class="btn small danger" onclick="resolvePayment('${p.id}','reject')">Reject</button>
+        ` : `<span class="pill">${escapeHtml(p.status)}</span>`}
+      </td>
+    </tr>`).join('');
+  app.innerHTML = `
+    <h2 style="margin-top:0;">Payments</h2>
+    <div class="search-row">
+      <select onchange="state.paymentsStatus=this.value; loadPayments();">
+        <option value="pending" ${state.paymentsStatus==='pending'?'selected':''}>Pending</option>
+        <option value="approved" ${state.paymentsStatus==='approved'?'selected':''}>Approved</option>
+        <option value="rejected" ${state.paymentsStatus==='rejected'?'selected':''}>Rejected</option>
+      </select>
+    </div>
+    <table class="admin-table">
+      <tr><th>Customer</th><th>Plan</th><th>Kind</th><th>Amount</th><th>Date</th><th></th></tr>
+      ${rows || '<tr><td colspan="6" class="muted">Nothing here.</td></tr>'}
+    </table>`;
+}
+async function resolvePayment(id, action){
+  try{
+    await api(`/api/admin/payments/${id}/${action}`, { method:'POST' });
+    loadPayments();
+  }catch(e){ alert(e.message); }
+}
+
+// ---------------- audit log ----------------
+
+async function loadAudit(){
+  try{
+    const data = await api('/api/admin/audit-log?limit=100');
+    state.auditEntries = data.entries;
+  }catch(e){
+    state.auditEntries = { error: e.message };
+  }
+  if(state.view === 'audit') renderAudit();
+}
+function renderAudit(){
+  const app = document.getElementById('app');
+  if(!state.auditEntries){ app.innerHTML = '<p class="muted">Loading…</p>'; return; }
+  if(state.auditEntries.error){ app.innerHTML = `<div class="error-msg">${escapeHtml(state.auditEntries.error)}</div>`; return; }
+  const rows = state.auditEntries.map(a => `
+    <tr>
+      <td>${fmtDate(a.created_at)}</td>
+      <td>${escapeHtml(a.action)}</td>
+      <td>${escapeHtml(a.resource_type)}${a.resource_id ? ' · ' + escapeHtml(a.resource_id) : ''}</td>
+      <td>${escapeHtml(String(a.actor))}</td>
+    </tr>`).join('');
+  app.innerHTML = `
+    <h2 style="margin-top:0;">Audit log</h2>
+    <table class="admin-table">
+      <tr><th>When</th><th>Action</th><th>Resource</th><th>Actor</th></tr>
+      ${rows || '<tr><td colspan="4" class="muted">No entries yet.</td></tr>'}
+    </table>`;
+}
+
+// ---------------- websites & forms browser ----------------
+
+async function loadWebsites(){
+  try{
+    const q = state.projectsSearch.trim();
+    const data = await api('/api/admin/projects' + (q ? '?search=' + encodeURIComponent(q) : ''));
+    state.projects = data.projects;
+  }catch(e){
+    state.projects = { error: e.message };
+  }
+  if(state.view === 'websites') renderWebsites();
+}
+function renderWebsites(){
+  const app = document.getElementById('app');
+  if(!state.projects){ app.innerHTML = '<p class="muted">Loading…</p>'; return; }
+  if(state.projects.error){ app.innerHTML = `<div class="error-msg">${escapeHtml(state.projects.error)}</div>`; return; }
+  const rows = state.projects.map(p => `
+    <tr>
+      <td>${escapeHtml(p.name)}</td>
+      <td>${escapeHtml(p.owner_email)}<br><span class="muted">${escapeHtml(PLAN_LABELS[p.owner_plan] || p.owner_plan)}</span></td>
+      <td><span class="pill ${p.published?'live':''}">${p.published?'Published':'Draft'}</span></td>
+      <td>${fmtDate(p.updated_at)}</td>
+      <td class="row-actions">
+        <button class="btn small outline" onclick="adminToggleProject('${p.id}')">${p.published?'Unpublish':'Publish'}</button>
+        <button class="btn small danger" onclick="adminDeleteProject('${p.id}','${escapeHtml(p.name).replace(/'/g,"\\'")}')">Delete</button>
+      </td>
+    </tr>`).join('');
+  app.innerHTML = `
+    <h2 style="margin-top:0;">Websites &amp; forms</h2>
+    <p class="muted" style="margin-top:-8px;">Every website across every customer account.</p>
+    <div class="search-row">
+      <input placeholder="Search by name, slug, or owner email…" value="${escapeHtml(state.projectsSearch)}"
+        onkeydown="if(event.key==='Enter'){ state.projectsSearch=this.value; loadWebsites(); }">
+      <button class="btn small outline" onclick="state.projectsSearch=this.previousElementSibling.value; loadWebsites();">Search</button>
+    </div>
+    <table class="admin-table">
+      <tr><th>Name</th><th>Owner</th><th>Status</th><th>Updated</th><th></th></tr>
+      ${rows || '<tr><td colspan="5" class="muted">No websites found.</td></tr>'}
+    </table>`;
+}
+async function adminToggleProject(id){
+  try{ await api(`/api/admin/projects/${id}/publish-toggle`, { method:'POST' }); loadWebsites(); }
+  catch(e){ alert(e.message); }
+}
+async function adminDeleteProject(id, name){
+  if(!confirm(`Delete "${name}"? This also deletes its submissions and bookings. This cannot be undone.`)) return;
+  try{ await api(`/api/admin/projects/${id}`, { method:'DELETE' }); loadWebsites(); }
+  catch(e){ alert(e.message); }
+}
+
+// ---------------- master telegram dashboard ----------------
+
+async function loadTelegramAdmin(){
+  try{
+    const data = await api('/api/admin/telegram');
+    state.telegramDests = data.destinations;
+  }catch(e){
+    state.telegramDests = { error: e.message };
+  }
+  if(state.view === 'telegram') renderTelegramAdmin();
+}
+function renderTelegramAdmin(){
+  const app = document.getElementById('app');
+  if(!state.telegramDests){ app.innerHTML = '<p class="muted">Loading…</p>'; return; }
+  if(state.telegramDests.error){ app.innerHTML = `<div class="error-msg">${escapeHtml(state.telegramDests.error)}</div>`; return; }
+  const rows = state.telegramDests.map(d => `
+    <tr>
+      <td>${escapeHtml(d.owner_email)}</td>
+      <td>${escapeHtml(d.project_name || 'All projects')}</td>
+      <td>${escapeHtml(d.chat_title || d.chat_id)}</td>
+      <td><span class="pill ${d.active?'live':'off'}">${d.active?'Active':'Disabled'}</span></td>
+      <td>${fmtDate(d.updated_at)}</td>
+      <td class="row-actions">
+        <button class="btn small outline" onclick="adminToggleTelegram('${d.id}')">${d.active?'Disable':'Enable'}</button>
+        <button class="btn small outline" onclick="adminTestTelegram('${d.id}')">Test</button>
+      </td>
+    </tr>`).join('');
+  app.innerHTML = `
+    <h2 style="margin-top:0;">Telegram</h2>
+    <p class="muted" style="margin-top:-8px;">Every connected chat across every customer account. Bot tokens are never shown here.</p>
+    <table class="admin-table">
+      <tr><th>Owner</th><th>Project</th><th>Chat</th><th>Status</th><th>Last activity</th><th></th></tr>
+      ${rows || '<tr><td colspan="6" class="muted">No connected chats yet.</td></tr>'}
+    </table>`;
+}
+async function adminToggleTelegram(id){
+  try{ await api(`/api/admin/telegram/${id}/toggle`, { method:'POST' }); loadTelegramAdmin(); }
+  catch(e){ alert(e.message); }
+}
+async function adminTestTelegram(id){
+  try{ await api(`/api/admin/telegram/${id}/test`, { method:'POST' }); alert('Test notification sent.'); }
+  catch(e){ alert(e.message); }
+}
+
+// ---------------- delegated admins ----------------
+
+const ADMIN_PERMISSIONS = [
+  ['manage_customers', 'Manage customers'],
+  ['manage_subscriptions', 'Manage subscriptions'],
+  ['manage_websites', 'Manage websites'],
+  ['manage_telegram', 'Manage Telegram'],
+  ['manage_payments', 'Manage payments'],
+  ['view_analytics', 'View analytics'],
+  ['manage_platform_settings', 'Manage platform settings'],
+  ['grant_unlimited', 'Grant unlimited-forms overrides'],
+];
+
+async function loadDelegated(){
+  if(!state.isOwnerAdmin){ state.delegates = { error: 'Only a full owner admin can manage delegated admins.' }; if(state.view==='delegated') renderDelegated(); return; }
+  try{
+    const data = await api('/api/admin/delegated');
+    state.delegates = data.delegates;
+  }catch(e){
+    state.delegates = { error: e.message };
+  }
+  if(state.view === 'delegated') renderDelegated();
+}
+function renderDelegated(){
+  const app = document.getElementById('app');
+  if(!state.delegates){ app.innerHTML = '<p class="muted">Loading…</p>'; return; }
+  if(state.delegates.error){ app.innerHTML = `<h2 style="margin-top:0;">Delegated admins</h2><div class="error-msg">${escapeHtml(state.delegates.error)}</div>`; return; }
+  const rows = state.delegates.map(d => `
+    <tr>
+      <td>${escapeHtml(d.email)}</td>
+      <td>${d.admin_permissions.map(p => `<span class="pill" style="margin:1px;">${escapeHtml(p)}</span>`).join('') || '<span class="muted">None</span>'}</td>
+      <td class="row-actions">
+        <button class="btn small outline" onclick="openDelegateForm('${escapeHtml(d.email)}', ${JSON.stringify(d.admin_permissions).replace(/"/g,'&quot;')})">Edit</button>
+        <button class="btn small danger" onclick="revokeDelegate('${escapeHtml(d.email)}')">Revoke</button>
+      </td>
+    </tr>`).join('');
+  app.innerHTML = `
+    <h2 style="margin-top:0;">Delegated admins</h2>
+    <p class="muted" style="margin-top:-8px;">Trusted staff who log in with their own account and get a subset of admin authority — never full owner access.</p>
+    <div class="card"><button class="btn" onclick="openDelegateForm('', [])">+ Grant delegated admin access</button></div>
+    <table class="admin-table">
+      <tr><th>Email</th><th>Permissions</th><th></th></tr>
+      ${rows || '<tr><td colspan="3" class="muted">No delegated admins yet.</td></tr>'}
+    </table>`;
+}
+function openDelegateForm(email, currentPermissions){
+  let bg = document.getElementById('delegateModalBg');
+  if(!bg){ bg = document.createElement('div'); bg.id = 'delegateModalBg'; bg.className = 'modal-bg'; bg.onclick = (e) => { if(e.target === bg) bg.remove(); }; document.body.appendChild(bg); }
+  bg.innerHTML = `
+    <div class="modal-box">
+      <h3 style="margin-top:0;">${email ? 'Edit' : 'Grant'} delegated admin</h3>
+      <div class="field-row"><label>Customer email</label><input id="delegateEmail" type="email" value="${escapeHtml(email)}" ${email ? 'readonly' : ''}></div>
+      <div class="field-row"><label>Permissions</label>
+        ${ADMIN_PERMISSIONS.map(([key,label]) => `
+          <label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;font-weight:normal;">
+            <input type="checkbox" value="${key}" ${currentPermissions.includes(key)?'checked':''} class="delegatePerm"> ${escapeHtml(label)}
+          </label>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn" onclick="saveDelegate()">Save</button>
+        <button class="btn outline" onclick="document.getElementById('delegateModalBg').remove()">Cancel</button>
+      </div>
+    </div>`;
+}
+async function saveDelegate(){
+  const email = document.getElementById('delegateEmail').value.trim();
+  const permissions = Array.from(document.querySelectorAll('.delegatePerm:checked')).map(el => el.value);
+  if(!email) return alert('Email is required.');
+  try{
+    await api('/api/admin/delegated', { method:'POST', body: JSON.stringify({ email, enabled: true, permissions }) });
+    document.getElementById('delegateModalBg').remove();
+    loadDelegated();
+  }catch(e){ alert(e.message); }
+}
+async function revokeDelegate(email){
+  if(!confirm(`Revoke delegated admin access for ${email}?`)) return;
+  try{
+    await api('/api/admin/delegated', { method:'POST', body: JSON.stringify({ email, enabled: false, permissions: [] }) });
+    loadDelegated();
+  }catch(e){ alert(e.message); }
+}
+
+// ---------------- platform settings & plan pricing ----------------
+
+async function loadSettings(){
+  try{
+    const [settingsData, planData] = await Promise.all([
+      api('/api/admin/settings'),
+      api('/api/admin/plans'),
+    ]);
+    state.settings = settingsData.settings;
+    state.planData = planData;
+  }catch(e){
+    state.settings = { error: e.message };
+  }
+  if(state.view === 'settings') renderSettings();
+}
+function renderSettings(){
+  const app = document.getElementById('app');
+  if(!state.settings){ app.innerHTML = '<p class="muted">Loading…</p>'; return; }
+  if(state.settings.error){ app.innerHTML = `<h2 style="margin-top:0;">Platform settings</h2><div class="error-msg">${escapeHtml(state.settings.error)}</div>`; return; }
+  const s = state.settings;
+  const plans = state.planData.plans;
+  const planCards = Object.keys(plans).map(key => {
+    const p = plans[key];
+    return `
+    <div class="card">
+      <h4 style="margin-top:0;">${escapeHtml(p.label)} <span class="muted">(${key})</span></h4>
+      <div class="field-row"><label>Label</label><input id="plan_${key}_label" value="${escapeHtml(p.label)}"></div>
+      <div class="field-row"><label>Initial / setup amount (₹)</label><input id="plan_${key}_initialAmount" type="number" value="${p.initialAmount}"></div>
+      <div class="field-row"><label>Monthly amount (₹, 0 = one-time)</label><input id="plan_${key}_monthlyAmount" type="number" value="${p.monthlyAmount}"></div>
+      <div class="field-row"><label>Max forms</label><input id="plan_${key}_maxForms" type="number" value="${p.maxForms}"></div>
+      <div class="field-row"><label>Max team members</label><input id="plan_${key}_maxTeamMembers" type="number" value="${p.maxTeamMembers||0}"></div>
+      ${['download','advancedTelegram','crm','dataExport','calendar','analytics','teamManagement'].map(f => `
+        <div class="toggle-row"><span>${f}</span><input type="checkbox" id="plan_${key}_${f}" ${p[f]?'checked':''}></div>
+      `).join('')}
+      <button class="btn small" style="margin-top:10px;" onclick="savePlan('${key}')">Save ${escapeHtml(p.label)}</button>
+    </div>`;
+  }).join('');
+  app.innerHTML = `
+    <h2 style="margin-top:0;">Platform settings</h2>
+    <div class="card">
+      <h3 style="margin-top:0;">General</h3>
+      <div class="field-row"><label>Platform name</label><input id="set_platformName" value="${escapeHtml(s.platformName||'')}"></div>
+      <div class="field-row"><label>Logo URL</label><input id="set_logoUrl" value="${escapeHtml(s.logoUrl||'')}"></div>
+      <div class="field-row"><label>Favicon URL</label><input id="set_faviconUrl" value="${escapeHtml(s.faviconUrl||'')}"></div>
+      <div class="field-row"><label>Payment UPI ID</label><input id="set_paymentUpi" value="${escapeHtml(s.paymentUpi||'')}"></div>
+      <div class="field-row"><label>Payment note</label><input id="set_paymentNote" value="${escapeHtml(s.paymentNote||'')}"></div>
+      <div class="toggle-row"><span>Maintenance mode</span><input type="checkbox" id="set_maintenanceMode" ${s.maintenanceMode?'checked':''}></div>
+      <button class="btn small" style="margin-top:10px;" onclick="saveSettings()">Save general settings</button>
+    </div>
+    <h3>Plan pricing &amp; features</h3>
+    <p class="muted" style="margin-top:-8px;">Changes here take effect immediately, platform-wide, without a code deploy.</p>
+    ${planCards}`;
+}
+async function saveSettings(){
+  const body = {
+    platformName: document.getElementById('set_platformName').value,
+    logoUrl: document.getElementById('set_logoUrl').value,
+    faviconUrl: document.getElementById('set_faviconUrl').value,
+    paymentUpi: document.getElementById('set_paymentUpi').value,
+    paymentNote: document.getElementById('set_paymentNote').value,
+    maintenanceMode: document.getElementById('set_maintenanceMode').checked,
+  };
+  try{
+    await api('/api/admin/settings', { method:'POST', body: JSON.stringify(body) });
+    alert('Saved.');
+  }catch(e){ alert(e.message); }
+}
+async function savePlan(key){
+  const overrides = {
+    label: document.getElementById(`plan_${key}_label`).value,
+    initialAmount: Number(document.getElementById(`plan_${key}_initialAmount`).value) || 0,
+    monthlyAmount: Number(document.getElementById(`plan_${key}_monthlyAmount`).value) || 0,
+    maxForms: Number(document.getElementById(`plan_${key}_maxForms`).value) || 0,
+    maxTeamMembers: Number(document.getElementById(`plan_${key}_maxTeamMembers`).value) || 0,
+  };
+  for(const f of ['download','advancedTelegram','crm','dataExport','calendar','analytics','teamManagement']){
+    overrides[f] = document.getElementById(`plan_${key}_${f}`).checked;
+  }
+  try{
+    await api('/api/admin/plans', { method:'POST', body: JSON.stringify({ plan: key, overrides }) });
+    alert('Saved.');
+    loadSettings();
+  }catch(e){ alert(e.message); }
+}
+
+// ---------------- boot ----------------
+
+render();
+if(state.token) loadDashboard();
+</script>
+</body>
+</html>
