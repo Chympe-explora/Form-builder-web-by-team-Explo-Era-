@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Loading…</title>
-<script>window.FORM_BUILDER_API_BASE = 'https://form-builder-api.senlysuchiang87.workers.dev';</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -54,14 +53,52 @@
   .el-button a, .el-button button{display:inline-block;background:var(--primary);color:#fff;text-decoration:none;padding:10px 20px;border-radius:4px;font-size:14px;border:none;cursor:pointer;}
   .state{text-align:center;padding:60px 20px;color:var(--gray);font-size:14px;}
   .hidden{display:none !important;}
+
+  /* ---- pricing calculator ---- */
+  .pc-wrap{margin-bottom:22px;}
+  .pc-pkg-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:14px;border-bottom:1px solid #F1F3F4;}
+  .pc-pkg-row:last-child{border-bottom:none;}
+  .pc-pkg-row label{display:flex;align-items:center;gap:10px;flex:1;cursor:pointer;}
+  .pc-pkg-price{color:var(--gray);font-size:13px;}
+  .pc-stepper-block{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #F1F3F4;}
+  .pc-stepper{display:flex;align-items:center;gap:10px;}
+  .pc-stepper button{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:#fff;font-size:16px;cursor:pointer;line-height:1;}
+  .pc-stepper button:disabled{opacity:.4;cursor:not-allowed;}
+  .pc-stepper .val{min-width:20px;text-align:center;font-size:14px;}
+  .pc-child-ages{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;}
+  .pc-child-ages input{width:70px;border:1px solid var(--border);border-radius:4px;padding:6px;font-size:13px;}
+  .pc-addon{padding:10px 0;border-bottom:1px solid #F1F3F4;}
+  .pc-addon-title{font-size:14px;font-weight:500;}
+  .pc-addon-note{font-size:12px;color:var(--gray);margin:2px 0 6px;}
+  .pc-addon-opts{display:flex;gap:16px;}
+  .pc-addon-opts label{display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;}
+  .pc-total-box{background:#F8F7FF;border-radius:6px;padding:12px 14px;margin-top:10px;}
+  .pc-total-line{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;color:var(--gray);}
+  .pc-total-final{display:flex;justify-content:space-between;font-size:16px;font-weight:700;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);}
+  .pc-empty{font-size:13px;color:var(--gray);}
+  .pc-footer-note{font-size:11px;color:var(--gray);margin-top:6px;}
+
+  /* ---- payment method ---- */
+  .pm-detail{background:#F8F7FF;border-radius:6px;padding:14px;margin-top:12px;}
+  .pm-detail-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px;}
+  .pm-copy-btn{background:#fff;border:1px solid var(--border);border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;}
+  .pm-qr-img{max-width:180px;display:block;margin:8px 0;border-radius:6px;}
+  .pm-note{font-size:12px;color:var(--gray);}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#323232;color:#fff;padding:10px 18px;border-radius:6px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:100;}
+  .toast.show{opacity:1;}
 </style>
 </head>
 <body>
 <div class="wrap" id="app">
   <div class="state" id="loadingState">Loading…</div>
 </div>
+<div class="toast" id="toast"></div>
 
+<script>window.FORM_BUILDER_API_BASE = 'https://form-builder-api.senlysuchiang87.workers.dev';</script>
 <script>
+// If a GitHub Pages 404 redirect stashed the original pretty URL
+// (e.g. /f/abc123?name=John), restore it in the address bar before
+// this page's own routing logic reads location.pathname.
 (function(){
   var redirect = sessionStorage.getItem('fb_redirect_path');
   if(redirect){
@@ -70,8 +107,19 @@
   }
 })();
 
+// ---- config: point this at your deployed Worker ----
 const API_BASE = window.FORM_BUILDER_API_BASE || 'https://form-builder-api.YOUR_SUBDOMAIN.workers.dev';
+// A downloaded/standalone file can carry its images inlined as data URIs
+// (see the admin app's "Download form" button) so they keep working even
+// after the project's media rows are deleted from the server — this
+// looks there first and only falls back to the live API URL otherwise.
+function mediaUrl(mediaId){
+  if(window.__EMBEDDED_MEDIA__ && window.__EMBEDDED_MEDIA__[mediaId]) return window.__EMBEDDED_MEDIA__[mediaId];
+  return `${API_BASE}/api/media/${mediaId}/file`;
+}
 
+// Slug comes from the path (e.g. /f/abc123) or ?slug=abc123 as a fallback,
+// so this one file can render ANY project without a per-user build step.
 function getSlug(){
   const params = new URLSearchParams(location.search);
   if (params.get('slug')) return params.get('slug');
@@ -81,16 +129,23 @@ function getSlug(){
 
 let project = null;
 let currentPageIndex = 0;
-const values = {};
-let mediaUploads = {};
+let pageHistory = []; // stack of visited page indices, for branching-aware Back
+const values = {}; // elementId -> value
+let mediaUploads = {}; // elementId -> mediaId (for file_upload fields)
+const pcState = {}; // pricing_calculator elementId -> { participants, children, childAges[], addons:{} }
 
 async function init(){
   const slug = getSlug();
   const app = document.getElementById('app');
   try{
-    const res = await fetch(`${API_BASE}/api/public/${slug}`);
-    if(!res.ok) throw new Error('not found');
-    const data = await res.json();
+    // A downloaded/standalone copy of this file (see the admin app's
+    // "Download form" button) embeds its project directly instead of
+    // fetching it by slug — skip the network round-trip when present.
+    const data = window.__EMBEDDED_PROJECT__ || await (async () => {
+      const res = await fetch(`${API_BASE}/api/public/${slug}`);
+      if(!res.ok) throw new Error('not found');
+      return res.json();
+    })();
     project = data;
     document.title = data.name || 'Form';
     applyTheme(data.config.theme);
@@ -111,33 +166,42 @@ function applyPrefill(config){
   const params = new URLSearchParams(location.search);
   config.pages.forEach(page => page.elements.forEach(el => {
     const key = el.props && el.props.prefillKey;
-    if(key && params.has(key)) values[el.id] = params.get(key);
+    if(!key || !params.has(key)) return;
+    const raw = params.get(key);
+    if(el.type === 'pricing_calculator'){
+      // prefill just the chosen package; steppers/add-ons keep their defaults
+      pcInit(el).packageId = raw;
+    } else {
+      values[el.id] = raw;
+    }
   }));
 }
 
+function pagesSorted(){ return project.config.pages.slice().sort((a,b)=>a.order-b.order); }
+function pageIndexById(id){ return pagesSorted().findIndex(pg=>pg.id===id); }
+
 function render(){
   const app = document.getElementById('app');
-  const pages = project.config.pages.slice().sort((a,b)=>a.order-b.order);
-  const page = pages[currentPageIndex];
-  const isLast = currentPageIndex === pages.length - 1;
-  const isFirst = currentPageIndex === 0;
+const page = pagesSorted()[currentPageIndex];
+  const isFirst = pageHistory.length === 0;
   const B = project.config.buttons || {};
   const theme = project.config.theme || {};
 
   let html = '<div class="card"><div class="top-bar"></div>';
-  if(theme.bannerMediaId) html += `<div class="banner"><img src="${API_BASE}/api/media/${theme.bannerMediaId}/file"></div>`;
+  if(theme.bannerMediaId) html += `<div class="banner"><img src="${mediaUrl(theme.bannerMediaId)}"></div>`;
   html += '<div class="card-body">';
-  if(theme.logoMediaId) html += `<img class="logo" src="${API_BASE}/api/media/${theme.logoMediaId}/file">`;
+  if(theme.logoMediaId) html += `<img class="logo" src="${mediaUrl(theme.logoMediaId)}">`;
 
   page.elements.filter(el=>!el.hidden).sort((a,b)=>a.order-b.order).forEach(el=>{
     html += renderElement(el);
   });
   html += '</div></div>';
 
+  const atEnd = !nextPageIdFor(page);
   html += '<div class="btn-bar"><div class="left">';
   if(B.back && B.back.enabled && !isFirst) html += `<button class="gbtn outline" onclick="goBack()">${escapeHtml(B.back.text)}</button>`;
   html += '</div><div class="right">';
-  if(isLast){
+  if(atEnd){
     if(B.submit && B.submit.enabled !== false) html += `<button class="gbtn filled" onclick="submitForm()">${escapeHtml(B.submit.text || 'Submit')}</button>`;
   } else {
     if(B.next && B.next.enabled !== false) html += `<button class="gbtn filled" onclick="goNext()">${escapeHtml(B.next.text || 'Next')}</button>`;
@@ -145,7 +209,25 @@ function render(){
   html += '</div></div>';
 
   app.innerHTML = html;
-  bindInputs();
+  bindInputs(page);
+}
+
+/** Works out which page id comes after `page`, honoring page.branching
+    if present (keyed off the current value of branching.sourceElementId),
+    otherwise falls back to the next page in list order. Returns null if
+    this is the last page (nothing to go to). */
+function nextPageIdFor(page){
+  const pages = pagesSorted();
+  const br = page.branching;
+  if(br && br.sourceElementId){
+    const v = values[br.sourceElementId];
+    const mapped = v != null && br.map && Object.prototype.hasOwnProperty.call(br.map, v) ? br.map[v] : null;
+    const target = mapped || br.default || null;
+    if(target && pageIndexById(target) !== -1) return target;
+  }
+  const idx = pageIndexById(page.id);
+  const nextPage = pages[idx+1];
+  return nextPage ? nextPage.id : null;
 }
 
 function renderElement(el){
@@ -153,11 +235,13 @@ function renderElement(el){
   switch(el.type){
     case 'heading': return `<h1 class="el-heading">${escapeHtml(p.text||'')}</h1>`;
     case 'paragraph': return `<p class="el-paragraph">${escapeHtml(p.text||'')}</p>`;
-    case 'image': return `<div class="el-image">${p.mediaId ? `<img src="${API_BASE}/api/media/${p.mediaId}/file" alt="${escapeHtml(p.alt||'')}">` : ''}${p.caption?`<p class="el-paragraph">${escapeHtml(p.caption)}</p>`:''}</div>`;
-    case 'gallery': return `<div class="el-gallery">${(p.images||[]).map(img=>`<div class="gallery-item"><img src="${API_BASE}/api/media/${img.mediaId}/file" alt="${escapeHtml(img.alt||'')}">${img.caption?`<p class="gallery-caption">${escapeHtml(img.caption)}</p>`:''}</div>`).join('')}</div>`;
+    case 'image': return `<div class="el-image">${p.mediaId ? `<img src="${mediaUrl(p.mediaId)}" alt="${escapeHtml(p.alt||'')}">` : ''}${p.caption?`<p class="el-paragraph">${escapeHtml(p.caption)}</p>`:''}</div>`;
+    case 'gallery': return `<div class="el-gallery">${(p.images||[]).map(img=>`<div class="gallery-item"><img src="${mediaUrl(img.mediaId)}" alt="${escapeHtml(img.alt||'')}">${img.caption?`<p class="gallery-caption">${escapeHtml(img.caption)}</p>`:''}</div>`).join('')}</div>`;
     case 'button': return `<div class="el-button"><a href="${p.href||'#'}" target="_blank" rel="noopener">${escapeHtml(p.text||'Button')}</a></div>`;
-    case 'text_input': case 'email': case 'number': case 'date':
+    case 'text_input': case 'email': case 'date':
       return field(el, `<input class="answer" type="${el.type==='text_input'?'text':el.type}" id="in-${el.id}" placeholder="${escapeHtml(p.placeholder||'')}" value="${escapeHtml(values[el.id]||'')}">`);
+    case 'number':
+      return field(el, `<input class="answer" type="number" id="in-${el.id}" placeholder="${escapeHtml(p.placeholder||'')}" value="${escapeHtml(values[el.id]||'')}" ${numAttr(p)}>`);
     case 'textarea':
       return field(el, `<textarea class="answer" id="in-${el.id}" rows="3" placeholder="${escapeHtml(p.placeholder||'')}">${escapeHtml(values[el.id]||'')}</textarea>`);
     case 'dropdown':
@@ -165,11 +249,35 @@ function renderElement(el){
     case 'checkbox':
       return field(el, (p.options||[]).map((o,i)=>`<label class="opt-row"><input type="checkbox" name="cb-${el.id}" value="${escapeHtml(o)}"> ${escapeHtml(o)}</label>`).join(''));
     case 'radio':
-      return field(el, (p.options||[]).map((o,i)=>`<label class="opt-row"><input type="radio" name="rd-${el.id}" value="${escapeHtml(o)}"> ${escapeHtml(o)}</label>`).join(''));
+      return field(el, (p.options||[]).map((o,i)=>`<label class="opt-row"><input type="radio" name="rd-${el.id}" value="${escapeHtml(o)}" ${values[el.id]===o?'checked':''}> ${escapeHtml(o)}</label>`).join(''));
     case 'file_upload':
       return field(el, `<input class="answer" type="file" id="in-${el.id}">`);
+    case 'pricing_calculator':
+      return renderPricingCalculator(el);
+    case 'payment_method':
+      return renderPaymentMethod(el);
     default: return '';
   }
+}
+
+/** Builds the min/max attributes for a number input: a literal min/max,
+    or — if minRef/maxRef name another element on the page — the
+    referenced element's current value, read live. */
+function numAttr(p){
+  let min = p.min;
+  let max = p.max;
+  if(p.minRef && values[p.minRef] !== undefined && values[p.minRef] !== '') {
+    const refVal = Number(values[p.minRef]);
+    if(!Number.isNaN(refVal)) min = (min===undefined||min===null) ? refVal : Math.max(min, refVal);
+  }
+  if(p.maxRef && values[p.maxRef] !== undefined && values[p.maxRef] !== '') {
+    const refVal = Number(values[p.maxRef]);
+    if(!Number.isNaN(refVal)) max = (max===undefined||max===null) ? refVal : Math.min(max, refVal);
+  }
+  let out = '';
+  if(min !== undefined && min !== null) out += ` min="${min}"`;
+  if(max !== undefined && max !== null) out += ` max="${max}"`;
+  return out;
 }
 
 function field(el, innerHtml){
@@ -181,10 +289,312 @@ function field(el, innerHtml){
   </div>`;
 }
 
-function bindInputs(){}
+/* ================= pricing_calculator ================= */
+
+function pcInit(el){
+  const p = el.props || {};
+  if(!pcState[el.id]){
+    pcState[el.id] = {
+      packageId: (values[el.id] && values[el.id].packageId) || null,
+      participants: (p.participants && p.participants.default) ?? (p.participants && p.participants.enabled ? 1 : 0),
+      children: (p.children && p.children.default) ?? 0,
+      childAges: [],
+      addons: {},
+      couponInput: '',
+      // auto-applied when a discount is enabled with no code requirement
+      couponApplied: !!(p.discount && p.discount.enabled && !p.discount.code)
+    };
+    (p.addons||[]).forEach(a => { pcState[el.id].addons[a.id] = 'no'; });
+  }
+  return pcState[el.id];
+}
+function pcApplyCoupon(elId){
+  const el = findElOnPage(elId);
+  const p = el.props || {};
+  const st = pcState[elId];
+  const input = document.getElementById(`pc-coupon-${elId}`);
+  st.couponInput = input ? input.value.trim() : '';
+  const codeOk = p.discount && p.discount.code && st.couponInput.toLowerCase() === String(p.discount.code).toLowerCase();
+  st.couponApplied = !!codeOk;
+  const msg = document.getElementById(`pc-coupon-msg-${elId}`);
+  if(msg){
+    msg.textContent = codeOk ? (p.discount.successText || 'Discount applied!') : (p.discount.failText || "That code doesn't look right.");
+    msg.style.color = codeOk ? '#188038' : 'var(--red)';
+  }
+  pcRecalcOnly(elId);
+}
+
+function renderPricingCalculator(el){
+  const p = el.props || {};
+  const st = pcInit(el);
+  const cur = p.currencySymbol ?? '\u20B9';
+  let html = `<div class="pc-wrap" id="field-${el.id}">
+    <div class="field-label">${escapeHtml(p.label||'Choose your package')}${p.required?'<span class="req">*</span>':''}</div>`;
+
+  (p.packages||[]).forEach(pkg=>{
+    html += `<div class="pc-pkg-row">
+      <label>
+        <input type="radio" name="pcpkg-${el.id}" value="${escapeHtml(pkg.id)}" ${st.packageId===pkg.id?'checked':''} onchange="pcSet('${el.id}','packageId','${escapeHtml(pkg.id)}')">
+        ${escapeHtml(pkg.label)}
+      </label>
+      <span class="pc-pkg-price">= ${cur}${pkg.price} ${escapeHtml(p.perUnitLabel||'per person')}</span>
+    </div>`;
+  });
+  html += `<div class="err" id="err-pc-${el.id}">Please select a package.</div>`;
+
+  if(p.participants && p.participants.enabled){
+    html += pcStepperHtml(el.id, 'participants', p.participants.label||'Number of participants', st.participants, p.participants.min??1, p.participants.max??50);
+  }
+  if(p.children && p.children.enabled){
+    html += pcStepperHtml(el.id, 'children', p.children.label||'Number of children', st.children, p.children.min??0, p.children.max??50);
+    if(p.children.collectAges && st.children > 0){
+      html += `<div class="pc-child-ages">` + Array.from({length:st.children}).map((_,i)=>{
+        const lbl = (p.children.label_age||'Child {n} age').replace('{n}', String(i+1));
+        return `<label style="font-size:12px;">${escapeHtml(lbl)}<br><input type="number" min="0" max="18" value="${st.childAges[i]??''}" oninput="pcSetChildAge('${el.id}',${i},this.value)"></label>`;
+      }).join('') + `</div>`;
+    }
+  }
+
+  (p.addons||[]).forEach(a=>{
+    html += `<div class="pc-addon">
+      <div class="pc-addon-title">${escapeHtml(a.title)}</div>
+      ${a.note?`<div class="pc-addon-note">${escapeHtml(a.note)}</div>`:''}
+      <div class="pc-addon-opts">
+        <label><input type="radio" name="pcaddon-${el.id}-${a.id}" value="yes" ${st.addons[a.id]==='yes'?'checked':''} onchange="pcSetAddon('${el.id}','${a.id}','yes')"> Yes</label>
+        <label><input type="radio" name="pcaddon-${el.id}-${a.id}" value="no" ${st.addons[a.id]!=='yes'?'checked':''} onchange="pcSetAddon('${el.id}','${a.id}','no')"> No</label>
+      </div>
+    </div>`;
+  });
+
+  if(p.discount && p.discount.enabled && p.discount.code){
+    html += `<div class="pc-coupon-row" style="display:flex;gap:8px;margin:10px 0;align-items:center;">
+      <input type="text" placeholder="${escapeHtml(p.discount.codePlaceholder||'Coupon code')}" id="pc-coupon-${el.id}" value="${escapeHtml(st.couponInput||'')}" style="flex:1;border:1px solid var(--border);border-radius:4px;padding:6px 8px;font-size:13px;">
+      <button type="button" class="pm-copy-btn" onclick="pcApplyCoupon('${el.id}')">Apply</button>
+    </div>
+    <div class="pc-coupon-msg" id="pc-coupon-msg-${el.id}" style="font-size:12px;margin:-4px 0 8px;color:${st.couponApplied?'#188038':'var(--gray)'};">${st.couponApplied ? (p.discount.successText||'Discount applied!') : ''}</div>`;
+  }
+
+  html += `<div class="pc-total-box" id="pc-total-${el.id}"></div>`;
+  if(p.footerNote) html += `<div class="pc-footer-note">${escapeHtml(p.footerNote)}</div>`;
+  html += `</div>`;
+  return html;
+}
+
+function pcStepperHtml(elId, key, label, val, min, max){
+  return `<div class="pc-stepper-block">
+    <span>${escapeHtml(label)}</span>
+    <div class="pc-stepper">
+      <button type="button" ${val<=min?'disabled':''} onclick="pcStep('${elId}','${key}',-1)">\u2212</button>
+      <span class="val">${val}</span>
+      <button type="button" ${val>=max?'disabled':''} onclick="pcStep('${elId}','${key}',1)">+</button>
+    </div>
+  </div>`;
+}
+
+function pcSet(elId, key, val){ pcState[elId][key] = val; document.getElementById(`err-pc-${elId}`).classList.remove('show'); rerenderPricingCalculator(elId); }
+function pcSetAddon(elId, addonId, val){ pcState[elId].addons[addonId] = val; rerenderPricingCalculator(elId); }
+function pcSetChildAge(elId, idx, val){ const n = parseInt(val,10); pcState[elId].childAges[idx] = Number.isNaN(n)?null:n; pcRecalcOnly(elId); }
+function pcStep(elId, key, dir){
+  const el = findElOnPage(elId);
+  const p = el.props || {};
+  const cfg = key==='participants' ? p.participants : p.children;
+  const min = cfg.min ?? (key==='participants'?1:0), max = cfg.max ?? 50;
+  let v = (pcState[elId][key] || 0) + dir;
+  v = Math.max(min, Math.min(max, v));
+  pcState[elId][key] = v;
+  rerenderPricingCalculator(elId);
+}
+function findElOnPage(elId){
+  for(const pg of project.config.pages){ const e = pg.elements.find(x=>x.id===elId); if(e) return e; }
+  return null;
+}
+function rerenderPricingCalculator(elId){
+  const wrap = document.getElementById(`field-${elId}`);
+  if(!wrap) return;
+  const el = findElOnPage(elId);
+  wrap.outerHTML = renderPricingCalculator(el);
+  pcRecalcOnly(elId);
+}
+function pcRecalcOnly(elId){
+  const el = findElOnPage(elId);
+  const { lines, total } = pcComputeTotal(el);
+  const box = document.getElementById(`pc-total-${elId}`);
+  if(!box) return;
+  const p = el.props||{};
+  const cur = p.currencySymbol ?? '\u20B9';
+  if(lines.length===0){
+    box.innerHTML = `<div class="pc-empty">${escapeHtml(p.emptyBreakdownNote||'Select a package to see pricing')}</div>`;
+  } else {
+    box.innerHTML = lines.map(l=>`<div class="pc-total-line"><span>${escapeHtml(l.label)}</span><span>${cur}${Math.round(l.amount).toLocaleString('en-IN')}</span></div>`).join('')
+      + `<div class="pc-total-final"><span>${escapeHtml(p.totalLabel||'Estimated total')}</span><span>${cur}${Math.round(total).toLocaleString('en-IN')}</span></div>`;
+  }
+  values[elId] = {
+    packageId: pcState[elId].packageId,
+    participants: pcState[elId].participants,
+    children: pcState[elId].children,
+    childAges: pcState[elId].childAges.slice(),
+    addons: Object.assign({}, pcState[elId].addons),
+    couponApplied: pcState[elId].couponApplied || false,
+    couponCode: pcState[elId].couponApplied ? pcState[elId].couponInput : '',
+    total
+  };
+}
+
+/** Generic price computation: package x headcount, plus any configured
+    add-ons (tiered_per_person or flat_or_per_person). Works for any set
+    of packages/add-ons a creator defines — nothing here is specific to
+    one business. */
+function pcComputeTotal(el){
+  const p = el.props || {};
+  const st = pcState[el.id];
+  const pkg = (p.packages||[]).find(x=>x.id===st.packageId);
+  const participants = st.participants||0;
+  const children = st.children||0;
+  const childRate = (p.children && p.children.priceMultiplier) ?? 1;
+  const lines = []; let total = 0;
+
+  if(pkg){
+    if(participants > 0){ const sub = pkg.price*participants; lines.push({label:`${pkg.label} \u00d7 ${participants}`, amount:sub}); total += sub; }
+    if(children > 0 && childRate > 0){ const sub = pkg.price*childRate*children; lines.push({label:`${pkg.label} \u00d7 ${children} (child)`, amount:sub}); total += sub; }
+    else if(children > 0){ lines.push({label:`${pkg.label} \u00d7 ${children} (child, free)`, amount:0}); }
+  }
+
+  (p.addons||[]).forEach(a=>{
+    if(st.addons[a.id] !== 'yes') return;
+    if(a.kind === 'tiered_per_person'){
+      if(participants > 0){
+        const sub = (a.adultBasePrice||0) + Math.max(0, participants-1)*(a.additionalAdultPrice||0);
+        lines.push({label:`${a.title} \u2014 ${participants}`, amount: sub}); total += sub;
+      }
+      if(children > 0){
+        const freeAge = a.childFreeAge ?? 0;
+        let chargeable = 0;
+        for(let i=0;i<children;i++){ const age = st.childAges[i]; if(age!=null && age<=freeAge) continue; chargeable++; }
+        if(chargeable > 0){ const sub = chargeable*(a.childPrice||0); lines.push({label:`${a.title} \u2014 ${chargeable} child(ren)`, amount: sub}); total += sub; }
+      }
+    } else if(a.kind === 'flat_or_per_person'){
+      const headcount = participants + children;
+      const sub = a.perPerson ? (a.price||0)*headcount : (a.price||0);
+      lines.push({label: a.perPerson ? `${a.title} \u00d7 ${headcount}` : a.title, amount: sub});
+      total += sub;
+    }
+  });
+
+  // Discount — a generic percent-off or flat-off applied to the subtotal
+  // so far. If a code is configured, it only applies once the visitor has
+  // entered and applied a matching code (adaptively recalculated live,
+  // same as every other line here).
+  const disc = p.discount;
+  if(disc && disc.enabled && total > 0 && (!disc.code || st.couponApplied)){
+    let discAmount = disc.type === 'flat' ? (disc.value||0) : total * ((disc.value||0)/100);
+    discAmount = Math.min(discAmount, total); // never discount past zero
+    if(discAmount > 0){
+      const label = disc.label || (disc.type === 'flat' ? 'Discount' : `Discount (${disc.value}% off)`);
+      lines.push({ label, amount: -discAmount });
+      total -= discAmount;
+    }
+  }
+
+  return { lines, total, pkg };
+}
+
+/* ================= payment_method ================= */
+
+function renderPaymentMethod(el){
+  const p = el.props || {};
+  const chosen = values[el.id];
+  let html = `<div class="field" id="field-${el.id}">
+    <div class="field-label">${escapeHtml(p.label||'Payment mode')}${p.required?'<span class="req">*</span>':''}</div>`;
+  (p.options||[]).forEach(opt=>{
+    html += `<label class="opt-row"><input type="radio" name="pm-${el.id}" value="${escapeHtml(opt.id)}" ${chosen===opt.id?'checked':''} onchange="pmSelect('${el.id}','${escapeHtml(opt.id)}')"> ${escapeHtml(opt.label)}</label>`;
+  });
+  html += `<div class="err">Please select a payment mode.</div>`;
+  if(p.showInline !== false && chosen){
+    const opt = (p.options||[]).find(o=>o.id===chosen);
+    if(opt) html += renderPaymentDetail(opt.detail||{}, el.id);
+  }
+  html += `</div>`;
+  return html;
+}
+
+function pmSelect(elId, optId){
+  values[elId] = optId;
+  const wrap = document.getElementById(`field-${elId}`);
+  const el = findElOnPage(elId);
+  if(wrap) wrap.outerHTML = renderPaymentMethod(el);
+}
+
+function renderPaymentDetail(d, elId){
+  if(d.kind === 'upi'){
+    return `<div class="pm-detail">
+      ${d.accountName?`<div class="pm-detail-row"><span>Account name</span><span>${escapeHtml(d.accountName)}</span></div>`:''}
+      <div class="pm-detail-row"><span id="upi-${elId}">${escapeHtml(d.upiId||'')}</span><button type="button" class="pm-copy-btn" onclick="pmCopy('upi-${elId}')">Copy</button></div>
+    </div>`;
+  }
+  if(d.kind === 'bank'){
+    return `<div class="pm-detail">
+      ${d.bankName?`<div class="pm-detail-row"><span>Bank</span><span>${escapeHtml(d.bankName)}</span></div>`:''}
+      <div class="pm-detail-row"><span>Account</span><span id="acc-${elId}">${escapeHtml(d.account||'')}</span><button type="button" class="pm-copy-btn" onclick="pmCopy('acc-${elId}')">Copy</button></div>
+      <div class="pm-detail-row"><span>IFSC</span><span id="ifsc-${elId}">${escapeHtml(d.ifsc||'')}</span><button type="button" class="pm-copy-btn" onclick="pmCopy('ifsc-${elId}')">Copy</button></div>
+    </div>`;
+  }
+  if(d.kind === 'qr'){
+    return `<div class="pm-detail">
+      ${d.note?`<div class="pm-note">${escapeHtml(d.note)}</div>`:''}
+      ${d.mediaId?`<img class="pm-qr-img" id="qr-${elId}" src="${mediaUrl(d.mediaId)}">`:''}
+      <button type="button" class="pm-copy-btn" onclick="pmDownloadQr('qr-${elId}')">Download QR</button>
+    </div>`;
+  }
+  if(d.kind === 'custom'){
+    return `<div class="pm-detail">${escapeHtml(d.text||'')}</div>`;
+  }
+  return '';
+}
+
+function pmCopy(id){
+  const el = document.getElementById(id);
+  if(!el) return;
+  const text = el.textContent.trim();
+  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).catch(()=>{
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+  }).finally(()=> showToast('Copied: ' + text));
+}
+
+async function pmDownloadQr(imgId){
+  const img = document.getElementById(imgId);
+  if(!img) return;
+  try{
+    const resp = await fetch(img.src);
+    const blob = await resp.blob();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'payment-qr.png';
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  }catch(e){ window.open(img.src, '_blank'); }
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  if(!t) return;
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+function bindInputs(page){
+  // Live-refresh number fields whose min/max depend on another field
+  // (minRef/maxRef), and recompute pricing calculators as the visitor types.
+  page.elements.forEach(el=>{
+    if(el.type === 'number' && (el.props.minRef || el.props.maxRef)){
+      const input = document.getElementById(`in-${el.id}`);
+      if(input) input.addEventListener('input', ()=>{ values[el.id]=input.value; });
+    }
+  });
+}
 
 function currentPageElements(){
-  const pages = project.config.pages.slice().sort((a,b)=>a.order-b.order);
+  const pages = pagesSorted();
   return pages[currentPageIndex].elements.filter(el=>!el.hidden);
 }
 
@@ -194,6 +604,21 @@ function collectPageValues(){
     const p = el.props || {};
     const fieldEl = document.getElementById(`field-${el.id}`);
     if(!fieldEl) return;
+
+    if(el.type === 'pricing_calculator'){
+      const cur = values[el.id];
+      const empty = !cur || !cur.packageId;
+      fieldEl.classList.toggle('invalid', !!(p.required && empty));
+      if(p.required && empty) ok = false;
+      return;
+    }
+    if(el.type === 'payment_method'){
+      const empty = !values[el.id];
+      fieldEl.classList.toggle('invalid', !!(p.required && empty));
+      if(p.required && empty) ok = false;
+      return;
+    }
+
     let val;
     if(el.type === 'checkbox'){
       val = [...document.querySelectorAll(`input[name="cb-${el.id}"]:checked`)].map(i=>i.value);
@@ -203,6 +628,23 @@ function collectPageValues(){
     } else if(el.type === 'file_upload'){
       const inputEl = document.getElementById(`in-${el.id}`);
       val = inputEl && inputEl.files[0] ? inputEl.files[0] : null;
+    } else if(el.type === 'number'){
+      const inputEl = document.getElementById(`in-${el.id}`);
+      val = inputEl ? inputEl.value.trim() : '';
+      if(val !== ''){
+        let n = Number(val);
+        let min = p.min, max = p.max;
+        if(p.minRef && values[p.minRef] !== undefined && values[p.minRef] !== ''){
+          const r = Number(values[p.minRef]); if(!Number.isNaN(r)) min = (min===undefined||min===null)?r:Math.max(min,r);
+        }
+        if(p.maxRef && values[p.maxRef] !== undefined && values[p.maxRef] !== ''){
+          const r = Number(values[p.maxRef]); if(!Number.isNaN(r)) max = (max===undefined||max===null)?r:Math.min(max,r);
+        }
+        if(min !== undefined && min !== null && n < min) n = min;
+        if(max !== undefined && max !== null && n > max) n = max;
+        val = String(n);
+        if(inputEl) inputEl.value = val;
+      }
     } else {
       const inputEl = document.getElementById(`in-${el.id}`);
       val = inputEl ? inputEl.value.trim() : '';
@@ -221,12 +663,17 @@ function collectPageValues(){
 
 function goNext(){
   if(!collectPageValues()) return;
-  currentPageIndex++;
+  const page = pagesSorted()[currentPageIndex];
+  const targetId = nextPageIdFor(page);
+  if(targetId == null) return; // already at the end
+  pageHistory.push(currentPageIndex);
+  currentPageIndex = pageIndexById(targetId);
   window.scrollTo({top:0,behavior:'smooth'});
   render();
 }
 function goBack(){
-  currentPageIndex--;
+  if(pageHistory.length === 0) return;
+  currentPageIndex = pageHistory.pop();
   window.scrollTo({top:0,behavior:'smooth'});
   render();
 }
@@ -234,6 +681,7 @@ function goBack(){
 async function submitForm(){
   if(!collectPageValues()) return;
 
+  // Upload any file fields to Telegram-backed storage first.
   for(const [elId, val] of Object.entries(values)){
     if(val instanceof File){
       const form = new FormData();
@@ -246,14 +694,24 @@ async function submitForm(){
     }
   }
 
-  const res = await fetch(`${API_BASE}/api/public/${getSlug()}/submit`, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify(values),
-  });
-  if(!res.ok){
-    alert('Something went wrong submitting the form. Please try again.');
-    return;
+  const slugForSubmit = window.__EMBEDDED_PROJECT__ ? (project.slug || getSlug()) : getSlug();
+  let submitOk = false;
+  try{
+    const res = await fetch(`${API_BASE}/api/public/${slugForSubmit}/submit`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(values),
+    });
+    submitOk = res.ok;
+  }catch(e){ submitOk = false; }
+  if(!submitOk){
+    // Standalone downloaded copies may be opened with no route back to the
+    // API — don't block the visitor from still reaching you on WhatsApp.
+    const waCheck = project.config.whatsapp;
+    if(!(waCheck && waCheck.enabled && waCheck.number)){
+      alert('Something went wrong submitting the form. Please try again.');
+      return;
+    }
   }
 
   const wa = project.config.whatsapp;
@@ -266,11 +724,33 @@ async function submitForm(){
   document.getElementById('app').innerHTML = '<div class="card"><div class="top-bar"></div><div class="card-body"><h1 class="el-heading">Thanks — you\'re all set!</h1><p class="el-paragraph">Your response has been recorded.</p></div></div>';
 }
 
+/** Turns a stored value into readable text for the WhatsApp template.
+    pricing_calculator values are objects — summarize them instead of
+    dumping [object Object]; everything else is used as-is. */
+function formatValueForMessage(el, val){
+  if(val && typeof val === 'object' && el && el.type === 'pricing_calculator'){
+    const p = el.props||{};
+    const pkg = (p.packages||[]).find(x=>x.id===val.packageId);
+    const cur = p.currencySymbol ?? '\u20B9';
+    let s = pkg ? pkg.label : '';
+    if(val.participants) s += ` \u00d7 ${val.participants} adult(s)`;
+    if(val.children) s += `, ${val.children} child(ren)`;
+    const addonsOn = Object.entries(val.addons||{}).filter(([,v])=>v==='yes').map(([k])=>k);
+    if(addonsOn.length) s += ` + ${addonsOn.join(', ')}`;
+    if(val.couponApplied) s += ` (discount applied${val.couponCode?': '+val.couponCode:''})`;
+    s += ` \u2014 Total ${cur}${Math.round(val.total||0).toLocaleString('en-IN')}`;
+    return s;
+  }
+  if(val && typeof val === 'object') return JSON.stringify(val);
+  return val;
+}
+
+// Replaces {{prefillKey}} tokens in the WhatsApp template with submitted values.
 function buildWhatsAppMessage(template){
   const byKey = {};
   project.config.pages.forEach(page => page.elements.forEach(el=>{
     const key = el.props && el.props.prefillKey;
-    if(key && values[el.id] !== undefined) byKey[key] = values[el.id];
+    if(key && values[el.id] !== undefined) byKey[key] = formatValueForMessage(el, values[el.id]);
   }));
   return template.replace(/{{\s*(\w+)\s*}}/g, (_, key) => (byKey[key] !== undefined ? byKey[key] : ''));
 }
